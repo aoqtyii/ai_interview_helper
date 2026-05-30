@@ -1,0 +1,299 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum RecordStatus {
+  ACTIVE
+  ARCHIVED
+  DRAFT
+}
+
+enum InterviewMode {
+  TEXT
+  REALTIME_READY
+}
+
+enum InterviewStatus {
+  CREATED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum Speaker {
+  INTERVIEWER
+  CANDIDATE
+  SYSTEM
+}
+
+enum Difficulty {
+  JUNIOR
+  MID
+  SENIOR
+}
+
+enum LearningType {
+  ARTICLE
+  TASK
+  EXERCISE
+  PROJECT
+}
+
+enum ProgressStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum FeedType {
+  RSS
+  API
+  GITHUB
+  ARXIV
+}
+
+enum AiRunStatus {
+  SUCCESS
+  FAILED
+  MOCKED
+}
+
+model User {
+  id                String             @id @default(cuid())
+  email             String             @unique
+  name              String
+  passwordHash      String
+  role              UserRole           @default(USER)
+  status            UserStatus         @default(ACTIVE)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  profile           UserProfile?
+  interviewSessions InterviewSession[]
+  learningProgress  LearningProgress[]
+  bookmarks         ArticleBookmark[]
+  aiRunLogs         AiRunLog[]
+  improvementPlans  ImprovementPlan[]
+}
+
+model UserProfile {
+  id             String       @id @default(cuid())
+  userId         String       @unique
+  targetRoleId   String?
+  level          Difficulty   @default(MID)
+  goals          String       @default("")
+  preferences    Json         @default("{}")
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetRole     RoleProfile? @relation(fields: [targetRoleId], references: [id])
+}
+
+model RoleProfile {
+  id                String              @id @default(cuid())
+  name              String              @unique
+  slug              String              @unique
+  description       String
+  status            RecordStatus        @default(ACTIVE)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  skills            Skill[]
+  userProfiles      UserProfile[]
+  questions         InterviewQuestion[]
+  interviewSessions InterviewSession[]
+}
+
+model Skill {
+  id            String              @id @default(cuid())
+  roleProfileId String
+  name          String
+  category      String
+  level         Difficulty          @default(MID)
+  description   String
+  embedding     Unsupported("vector")?
+  roleProfile   RoleProfile         @relation(fields: [roleProfileId], references: [id], onDelete: Cascade)
+  questions     InterviewQuestion[]
+  learningItems LearningItem[]
+
+  @@index([roleProfileId])
+}
+
+model InterviewQuestion {
+  id            String        @id @default(cuid())
+  roleProfileId String
+  skillId       String?
+  difficulty    Difficulty
+  question      String
+  rubric        Json
+  status        RecordStatus  @default(ACTIVE)
+  version       Int           @default(1)
+  createdAt     DateTime      @default(now())
+  roleProfile   RoleProfile   @relation(fields: [roleProfileId], references: [id], onDelete: Cascade)
+  skill         Skill?        @relation(fields: [skillId], references: [id])
+}
+
+model InterviewSession {
+  id             String             @id @default(cuid())
+  userId         String
+  roleProfileId  String
+  mode           InterviewMode      @default(TEXT)
+  difficulty     Difficulty         @default(MID)
+  topic          String?
+  status         InterviewStatus    @default(CREATED)
+  startedAt      DateTime?
+  endedAt        DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleProfile    RoleProfile        @relation(fields: [roleProfileId], references: [id])
+  turns          InterviewTurn[]
+  report         AssessmentReport?
+}
+
+model InterviewTurn {
+  id        String           @id @default(cuid())
+  sessionId String
+  speaker   Speaker
+  content   String
+  metadata  Json             @default("{}")
+  createdAt DateTime         @default(now())
+  session   InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+}
+
+model AssessmentReport {
+  id               String            @id @default(cuid())
+  sessionId        String            @unique
+  overallScore     Int
+  dimensionScores  Json
+  summary          String
+  recommendations  Json
+  createdAt        DateTime          @default(now())
+  session          InterviewSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  improvementPlans ImprovementPlan[]
+}
+
+model ImprovementPlan {
+  id        String           @id @default(cuid())
+  userId    String
+  reportId  String
+  status    ProgressStatus   @default(TODO)
+  items     Json
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  report    AssessmentReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+}
+
+model LearningItem {
+  id               String             @id @default(cuid())
+  skillId          String?
+  type             LearningType
+  title            String
+  description      String
+  contentUrl       String?
+  estimatedMinutes Int                @default(20)
+  embedding        Unsupported("vector")?
+  skill            Skill?             @relation(fields: [skillId], references: [id])
+  progress         LearningProgress[]
+}
+
+model LearningProgress {
+  id             String         @id @default(cuid())
+  userId         String
+  learningItemId String
+  status         ProgressStatus @default(TODO)
+  score          Int?
+  updatedAt      DateTime       @updatedAt
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  learningItem   LearningItem   @relation(fields: [learningItemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, learningItemId])
+}
+
+model SourceFeed {
+  id            String                @id @default(cuid())
+  name          String
+  type          FeedType
+  url           String                @unique
+  status        RecordStatus          @default(ACTIVE)
+  crawlInterval String                @default("*/30 * * * *")
+  lastCrawledAt DateTime?
+  articles      IntelligenceArticle[]
+}
+
+model IntelligenceArticle {
+  id          String             @id @default(cuid())
+  sourceId    String
+  title       String
+  url         String             @unique
+  publishedAt DateTime?
+  rawHash     String
+  status      RecordStatus       @default(ACTIVE)
+  createdAt   DateTime           @default(now())
+  source      SourceFeed         @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  digest      ArticleDigest?
+  bookmarks   ArticleBookmark[]
+}
+
+model ArticleDigest {
+  id              String              @id @default(cuid())
+  articleId       String              @unique
+  summary         String
+  tags            String[]
+  relevanceScores Json
+  embedding       Unsupported("vector")?
+  createdAt       DateTime            @default(now())
+  article         IntelligenceArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+}
+
+model ArticleBookmark {
+  id        String              @id @default(cuid())
+  userId    String
+  articleId String
+  createdAt DateTime            @default(now())
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  article   IntelligenceArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, articleId])
+}
+
+model PromptTemplate {
+  id        String       @id @default(cuid())
+  taskType  String
+  version   Int
+  content   String
+  schema    Json         @default("{}")
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+
+  @@unique([taskType, version])
+}
+
+model AiRunLog {
+  id            String      @id @default(cuid())
+  userId        String?
+  taskType      String
+  provider      String
+  model         String
+  promptVersion Int?
+  latencyMs     Int
+  tokenUsage    Json        @default("{}")
+  status        AiRunStatus
+  error         String?
+  outputPreview String?
+  createdAt     DateTime    @default(now())
+  user          User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
