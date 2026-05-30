@@ -2,11 +2,23 @@ import Link from 'next/link';
 import { ExternalLink } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
 import { Panel } from '@/components/ui/panel';
-import { demo, safeApi } from '@/lib/api';
+import { EmptyState, ErrorState } from '@/components/ui/state';
+import { serverApi } from '@/lib/server-api';
 import type { Article } from '@/lib/types';
 
+export const dynamic = 'force-dynamic';
+
 export default async function IntelligencePage() {
-  const articles = await safeApi<Article[]>('/intelligence/articles', demo.articles);
+  let articles: Article[];
+  try {
+    articles = await serverApi<Article[]>('/intelligence/articles');
+  } catch (error) {
+    return (
+      <AppShell>
+        <ErrorState error={error} />
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
@@ -18,6 +30,7 @@ export default async function IntelligencePage() {
           </div>
           <span className="rounded-md border border-cyan/40 px-2 py-1 text-xs text-cyan">Source-first</span>
         </div>
+        {!articles.length && <EmptyState title="暂无资讯" description="管理员配置并抓取 RSS/API 来源后，这里会显示真实资讯摘要。" />}
         <div className="grid gap-4">
           {articles.map((article) => (
             <article key={article.id} className="rounded-md border border-line bg-black/20 p-4">

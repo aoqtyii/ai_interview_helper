@@ -2,8 +2,12 @@ import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { FeedType, RecordStatus } from '@prisma/client';
 import Parser from 'rss-parser';
+import { assertSafeHttpUrl } from '../../common/safe-url';
 import { AiGatewayService } from '../ai/ai-gateway.service';
 import { PrismaService } from '../../prisma/prisma.service';
+
+const FEED_FETCH_TIMEOUT_MS = 10_000;
+const MAX_FEED_BYTES = 1_000_000;
 
 @Injectable()
 export class IngestionService {
@@ -29,7 +33,8 @@ export class IngestionService {
       return { feedId, created: 0, skipped: 0, note: 'Only RSS is implemented in MVP worker' };
     }
 
-    const parsed = await this.parser.parseURL(feed.url);
+    const safeUrl = await assertSafeHttpUrl(feed.url);
+    const parsed = await this.parser.parseString(await this.fetchFeedXml(safeUrl));
     let created = 0;
     let skipped = 0;
 
@@ -93,6 +98,31 @@ export class IngestionService {
         tags: ['AI'],
         relevanceScores: { aiProductManager: 60, aiAgentDeveloper: 60, fde: 60 }
       };
+    }
+  }
+
+  private async fetchFeedXml(url: string) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FEED_FETCH_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) throw new Error(`Feed request failed with ${response.status}`);
+
+      const reader = response.body?.getReader();
+      if (!reader) return response.text();
+
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > MAX_FEED_BYTES) throw new Error('Feed response is too large');
+        chunks.push(value);
+      }
+      return Buffer.concat(chunks).toString('utf8');
+    } finally {
+      clearTimeout(timeout);
     }
   }
 }

@@ -47,7 +47,7 @@ export default function LoginPage() {
             onChange={(event) => setPassword(event.target.value)}
           />
           {error && <p className="text-sm text-red-300">{error}</p>}
-          <Button className="w-full" onClick={login}>
+          <Button className="w-full" onClick={() => void login()}>
             进入系统
           </Button>
         </div>

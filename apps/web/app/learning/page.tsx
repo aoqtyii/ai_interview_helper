@@ -1,16 +1,30 @@
 import { AppShell } from '@/components/layout/app-shell';
 import { Panel } from '@/components/ui/panel';
-import { demo, safeApi } from '@/lib/api';
+import { EmptyState, ErrorState } from '@/components/ui/state';
+import { serverApi } from '@/lib/server-api';
 import type { LearningItem, RoleProfile } from '@/lib/types';
 
+export const dynamic = 'force-dynamic';
+
 export default async function LearningPage() {
-  const [roles, items] = await Promise.all([
-    safeApi<RoleProfile[]>('/role-profiles', demo.roles),
-    safeApi<LearningItem[]>('/learning/recommendations', demo.learning)
-  ]);
+  let roles: RoleProfile[];
+  let items: LearningItem[];
+  try {
+    [roles, items] = await Promise.all([
+      serverApi<RoleProfile[]>('/role-profiles'),
+      serverApi<LearningItem[]>('/learning/recommendations')
+    ]);
+  } catch (error) {
+    return (
+      <AppShell>
+        <ErrorState error={error} />
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
+      {!roles.length && !items.length && <EmptyState title="暂无学习数据" description="管理员配置岗位画像和学习任务后，这里会显示真实推荐。" />}
       <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
         <Panel>
           <h2 className="text-lg font-semibold">岗位能力图谱</h2>

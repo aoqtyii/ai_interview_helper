@@ -11,7 +11,7 @@ async function bootstrap() {
     credentials: true
   });
   app.use(cookieParser());
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalPipes(new ValidationPipe({ forbidNonWhitelisted: true, transform: true, whitelist: true }));
 
   const port = Number(process.env.API_PORT ?? 4000);
   await app.listen(port);

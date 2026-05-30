@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { CurrentUser, AuthUser } from '../../common/current-user.decorator';
 import { Public } from '../../common/public.decorator';
+import { LoginDto } from './dto/login.dto';
 import { AuthService } from './auth.service';
 
 @Controller('auth')
@@ -10,7 +11,7 @@ export class AuthController {
 
   @Public()
   @Post('login')
-  async login(@Body() body: { email: string; password: string }, @Res({ passthrough: true }) response: Response) {
+  async login(@Body() body: LoginDto, @Res({ passthrough: true }) response: Response) {
     const result = await this.auth.login(body.email, body.password);
     response.cookie(process.env.COOKIE_NAME ?? 'aih_session', result.token, {
       httpOnly: true,

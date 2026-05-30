@@ -1,5 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { Public } from '../../common/public.decorator';
+import { Roles } from '../../common/roles.decorator';
+import { UserRole } from '@prisma/client';
 
 @Controller()
 export class HealthController {
@@ -14,6 +16,7 @@ export class HealthController {
   }
 
   @Get('metrics')
+  @Roles(UserRole.ADMIN)
   metrics() {
     return {
       uptimeSeconds: Math.round(process.uptime()),

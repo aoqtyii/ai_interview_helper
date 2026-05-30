@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
-import { Difficulty, FeedType, Prisma, UserRole } from '@prisma/client';
+import { UserRole } from '@prisma/client';
+import { assertSafeHttpUrl } from '../../common/safe-url';
 import { Roles } from '../../common/roles.decorator';
+import { CreateInterviewQuestionDto, CreateRoleProfileDto, CreateSourceFeedDto } from './dto/admin.dto';
 import { IngestionService } from '../ingestion/ingestion.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -13,31 +15,23 @@ export class AdminController {
   ) {}
 
   @Post('role-profiles')
-  createRole(@Body() body: { name: string; slug: string; description: string }) {
+  createRole(@Body() body: CreateRoleProfileDto) {
     return this.prisma.roleProfile.create({ data: body });
   }
 
   @Post('interview-questions')
-  createQuestion(
-    @Body()
-    body: {
-      roleProfileId: string;
-      skillId?: string;
-      difficulty: Difficulty;
-      question: string;
-      rubric: Prisma.InputJsonValue;
-    }
-  ) {
+  createQuestion(@Body() body: CreateInterviewQuestionDto) {
     return this.prisma.interviewQuestion.create({ data: body });
   }
 
   @Post('source-feeds')
-  createFeed(@Body() body: { name: string; type: FeedType; url: string; crawlInterval?: string }) {
+  async createFeed(@Body() body: CreateSourceFeedDto) {
+    const safeUrl = await assertSafeHttpUrl(body.url);
     return this.prisma.sourceFeed.create({
       data: {
         name: body.name,
         type: body.type,
-        url: body.url,
+        url: safeUrl,
         crawlInterval: body.crawlInterval ?? '*/30 * * * *'
       }
     });

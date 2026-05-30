@@ -91,6 +91,10 @@ export class InterviewsService {
 
   async finish(userId: string, role: UserRole, sessionId: string) {
     const session = await this.get(userId, role, sessionId);
+    if (session.status === InterviewStatus.COMPLETED && session.report) {
+      return session;
+    }
+
     const transcript = session.turns.map((turn) => `${turn.speaker}: ${turn.content}`).join('\n');
     const rawReport = await this.ai.run({
       taskType: 'assessment_report',
@@ -117,17 +121,21 @@ export class InterviewsService {
       }
     });
 
-    await this.prisma.improvementPlan.create({
-      data: {
-        userId: session.userId,
-        reportId: report.id,
-        items: parsed.recommendations.map((title: string, index: number) => ({
-          title,
-          priority: index + 1,
-          status: 'TODO'
-        }))
-      }
-    });
+    const existingPlan = await this.prisma.improvementPlan.findFirst({ where: { reportId: report.id } });
+    const planData = {
+      userId: session.userId,
+      reportId: report.id,
+      items: parsed.recommendations.map((title: string, index: number) => ({
+        title,
+        priority: index + 1,
+        status: 'TODO'
+      }))
+    };
+    if (existingPlan) {
+      await this.prisma.improvementPlan.update({ where: { id: existingPlan.id }, data: planData });
+    } else {
+      await this.prisma.improvementPlan.create({ data: planData });
+    }
 
     await this.prisma.interviewSession.update({
       where: { id: sessionId },

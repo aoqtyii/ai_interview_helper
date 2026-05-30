@@ -5,21 +5,31 @@ import { DatabaseZap, Play } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Panel } from '@/components/ui/panel';
-import { api, demo, safeApi } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import type { AiRunLog } from '@/lib/types';
 
 export default function AdminPage() {
-  const [logs, setLogs] = useState<AiRunLog[]>(demo.logs);
+  const [logs, setLogs] = useState<AiRunLog[]>([]);
   const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    void safeApi<AiRunLog[]>('/admin/ai-run-logs', demo.logs).then(setLogs);
+    api<AiRunLog[]>('/admin/ai-run-logs')
+      .then((nextLogs) => {
+        setLogs(nextLogs);
+        setError('');
+      })
+      .catch((nextError) => setError(formatAdminError(nextError)));
   }, []);
 
   async function runIngestion() {
     setMessage('抓取任务执行中...');
-    const result = await api('/admin/ingestion/run', { method: 'POST' }).catch(() => null);
-    setMessage(result ? '抓取任务已完成。' : '抓取失败，请确认已使用管理员账号登录且 API 可用。');
+    setError('');
+    const result = await api('/admin/ingestion/run', { method: 'POST' }).catch((nextError) => {
+      setError(formatAdminError(nextError));
+      return null;
+    });
+    setMessage(result ? '抓取任务已完成。' : '');
   }
 
   return (
@@ -31,10 +41,11 @@ export default function AdminPage() {
             <div className="rounded-md border border-line bg-black/20 p-4">岗位画像、题库、Prompt 模板和资讯源通过 Admin API 管理。</div>
             <div className="rounded-md border border-line bg-black/20 p-4">所有 AI 调用会记录 provider、model、状态和耗时。</div>
           </div>
-          <Button className="mt-5 w-full" onClick={runIngestion}>
+          <Button className="mt-5 w-full" onClick={() => void runIngestion()}>
             <Play className="h-4 w-4" />
             触发资讯抓取
           </Button>
+          {error && <p className="mt-3 rounded-md border border-red-400/40 bg-red-950/20 p-3 text-sm text-red-100">{error}</p>}
           {message && <p className="mt-3 text-sm text-slate-300">{message}</p>}
         </Panel>
 
@@ -54,6 +65,13 @@ export default function AdminPage() {
                 </tr>
               </thead>
               <tbody>
+                {!logs.length && (
+                  <tr>
+                    <td className="px-3 py-6 text-center text-slate-400" colSpan={4}>
+                      暂无 AI 调用日志
+                    </td>
+                  </tr>
+                )}
                 {logs.map((log) => (
                   <tr key={log.id} className="border-t border-line">
                     <td className="px-3 py-2">{log.taskType}</td>
@@ -69,4 +87,10 @@ export default function AdminPage() {
       </div>
     </AppShell>
   );
+}
+
+function formatAdminError(error: unknown) {
+  if (error instanceof ApiError && error.status === 401) return '请先登录管理员账号。';
+  if (error instanceof ApiError && error.status === 403) return '当前账号没有管理员权限。';
+  return '管理接口请求失败，请确认 API 服务和权限配置。';
 }

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AiRunStatus } from '@prisma/client';
+import { loadAppConfig } from '../../common/app-config';
 import { PrismaService } from '../../prisma/prisma.service';
 
 type AiTaskType = 'interviewer_turn' | 'assessment_report' | 'learning_coach' | 'article_digest';
@@ -18,13 +19,18 @@ export class AiGatewayService {
 
   async run(request: AiRequest) {
     const started = Date.now();
+    const config = loadAppConfig();
     const provider = process.env.AI_PROVIDER ?? 'openai-compatible';
     const model = process.env.AI_DEFAULT_MODEL ?? 'gpt-5.4-mini';
 
-    if (!process.env.AI_API_KEY) {
+    if (config.aiMockMode) {
       const output = this.mockResponse(request);
       await this.logRun(request, provider, model, Date.now() - started, AiRunStatus.MOCKED, output);
       return output;
+    }
+
+    if (!process.env.AI_API_KEY) {
+      throw new Error('AI_API_KEY is required when AI_MOCK_MODE is disabled');
     }
 
     try {
@@ -33,7 +39,7 @@ export class AiGatewayService {
       return output;
     } catch (error) {
       await this.logRun(request, provider, model, Date.now() - started, AiRunStatus.FAILED, undefined, String(error));
-      return this.mockResponse(request);
+      throw error;
     }
   }
 

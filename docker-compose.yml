@@ -31,13 +31,23 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    env_file: .env
     environment:
+      NODE_ENV: ${NODE_ENV:-development}
       DATABASE_URL: postgresql://aih:aih@postgres:5432/aih?schema=public
       REDIS_URL: redis://redis:6379
       API_PORT: 4000
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+      JWT_SECRET: ${JWT_SECRET:-}
+      COOKIE_NAME: ${COOKIE_NAME:-aih_session}
+      AI_PROVIDER: ${AI_PROVIDER:-openai-compatible}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MOCK_MODE: ${AI_MOCK_MODE:-true}
+      AI_DEFAULT_MODEL: ${AI_DEFAULT_MODEL:-gpt-5.4-mini}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "4000:4000"
+    command: ["sh", "-c", "npm run prisma:deploy && npm --workspace @aih/api run start"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -48,11 +58,18 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    command: ["npm", "--workspace", "@aih/api", "run", "start:worker"]
-    env_file: .env
+    command: ["sh", "-c", "npm run prisma:deploy && npm --workspace @aih/api run start:worker"]
     environment:
+      NODE_ENV: ${NODE_ENV:-development}
       DATABASE_URL: postgresql://aih:aih@postgres:5432/aih?schema=public
       REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-}
+      AI_PROVIDER: ${AI_PROVIDER:-openai-compatible}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MOCK_MODE: ${AI_MOCK_MODE:-true}
+      AI_DEFAULT_MODEL: ${AI_DEFAULT_MODEL:-gpt-5.4-mini}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,9 +80,8 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-    env_file: .env
     environment:
-      WEB_PUBLIC_API_BASE_URL: http://localhost:4000
+      WEB_PUBLIC_API_BASE_URL: ${WEB_PUBLIC_API_BASE_URL:-http://localhost:4000}
     ports:
       - "3000:3000"
     depends_on:

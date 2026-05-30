@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { Difficulty, UserRole } from '@prisma/client';
+import { UserRole } from '@prisma/client';
 import { AuthUser, CurrentUser } from '../../common/current-user.decorator';
+import { AddInterviewTurnDto, CreateInterviewSessionDto } from './dto/interview.dto';
 import { InterviewsService } from './interviews.service';
 
 @Controller('interviews')
@@ -8,7 +9,7 @@ export class InterviewsController {
   constructor(private readonly interviews: InterviewsService) {}
 
   @Post('sessions')
-  create(@CurrentUser() user: AuthUser, @Body() body: { roleProfileId: string; difficulty?: Difficulty; topic?: string }) {
+  create(@CurrentUser() user: AuthUser, @Body() body: CreateInterviewSessionDto) {
     return this.interviews.create(user.id, body);
   }
 
@@ -23,7 +24,7 @@ export class InterviewsController {
   }
 
   @Post('sessions/:id/turns')
-  addTurn(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: { content: string }) {
+  addTurn(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: AddInterviewTurnDto) {
     return this.interviews.addTurn(user.id, user.role as UserRole, id, body.content);
   }
 

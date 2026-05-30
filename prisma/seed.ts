@@ -4,8 +4,6 @@ import { hashPassword } from '../apps/api/src/common/password';
 const prisma = new PrismaClient();
 
 async function main() {
-  await prisma.$executeRawUnsafe('CREATE EXTENSION IF NOT EXISTS vector');
-
   const aiPm = await upsertRole('AI 产品经理', 'ai-product-manager', '负责 AI 产品发现、方案设计、指标验证和跨团队落地。');
   const agentDev = await upsertRole('AI Agent 开发', 'ai-agent-developer', '负责 Agent 架构、工具调用、RAG、评测和部署。');
   const fde = await upsertRole('Forward Deployed Engineer', 'fde', '面向客户场景快速交付 AI 解决方案，连接业务、工程和模型能力。');

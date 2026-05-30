@@ -18,12 +18,15 @@ import { LearningService } from './modules/learning/learning.service';
 import { PrismaService } from './prisma/prisma.service';
 import { RoleProfilesController } from './modules/role-profiles/role-profiles.controller';
 import { RoleProfilesService } from './modules/role-profiles/role-profiles.service';
+import { loadAppConfig } from './common/app-config';
+
+const appConfig = loadAppConfig();
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     JwtModule.register({
-      secret: process.env.JWT_SECRET ?? 'dev-only-change-me',
+      secret: appConfig.jwtSecret,
       signOptions: { expiresIn: '7d' }
     })
   ],

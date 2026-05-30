@@ -15,7 +15,7 @@
     "build": "npm-run-all build:*",
     "build:web": "npm --workspace @aih/web run build",
     "build:api": "npm --workspace @aih/api run build",
-    "lint": "npm-run-all lint:*",
+    "lint": "eslint .",
     "lint:web": "npm --workspace @aih/web run lint",
     "lint:api": "npm --workspace @aih/api run lint",
     "test": "npm-run-all test:*",
@@ -25,24 +25,33 @@
     "typecheck:web": "npm --workspace @aih/web run typecheck",
     "typecheck:api": "npm --workspace @aih/api run typecheck",
     "prisma:generate": "prisma generate",
+    "prisma:init": "tsx prisma/init-db.ts",
+    "prisma:deploy": "npm run prisma:init && prisma db push --skip-generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts"
   },
   "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@next/eslint-plugin-next": "^16.2.6",
     "@types/node": "^22.10.2",
-    "brace-expansion": "^5.0.6",
-    "caniuse-lite": "^1.0.30001793",
-    "lru-cache": "^11.5.1",
+    "@typescript-eslint/eslint-plugin": "^8.18.2",
+    "@typescript-eslint/parser": "^8.18.2",
+    "eslint": "^9.17.0",
+    "globals": "^15.14.0",
     "npm-run-all": "^4.1.5",
-    "pathe": "^2.0.3",
     "prisma": "^6.1.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   },
   "dependencies": {
     "@prisma/client": "^6.1.0",
-    "lodash": "^4.18.1",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
+  },
+  "overrides": {
+    "picomatch": "^4.0.4",
+    "qs": "^6.15.2"
   }
 }

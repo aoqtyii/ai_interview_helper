@@ -1,15 +1,29 @@
 import { AppShell } from '@/components/layout/app-shell';
 import { Panel } from '@/components/ui/panel';
 import { StatCard } from '@/components/dashboard/stat-card';
-import { demo, safeApi } from '@/lib/api';
+import { EmptyState, ErrorState } from '@/components/ui/state';
+import { serverApi } from '@/lib/server-api';
 import type { Article, InterviewSession, LearningItem } from '@/lib/types';
 
+export const dynamic = 'force-dynamic';
+
 export default async function DashboardPage() {
-  const [sessions, learning, articles] = await Promise.all([
-    safeApi<InterviewSession[]>('/interviews/sessions', demo.sessions),
-    safeApi<LearningItem[]>('/learning/recommendations', demo.learning),
-    safeApi<Article[]>('/intelligence/articles', demo.articles)
-  ]);
+  let sessions: InterviewSession[];
+  let learning: LearningItem[];
+  let articles: Article[];
+  try {
+    [sessions, learning, articles] = await Promise.all([
+      serverApi<InterviewSession[]>('/interviews/sessions'),
+      serverApi<LearningItem[]>('/learning/recommendations'),
+      serverApi<Article[]>('/intelligence/articles')
+    ]);
+  } catch (error) {
+    return (
+      <AppShell>
+        <ErrorState error={error} />
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
@@ -20,6 +34,11 @@ export default async function DashboardPage() {
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
+        {!sessions.length && !learning.length && !articles.length && (
+          <div className="lg:col-span-2">
+            <EmptyState title="暂无工作台数据" description="完成一次面试或配置学习内容后，这里会显示真实进展。" />
+          </div>
+        )}
         <Panel>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold">面试能力雷达</h2>
