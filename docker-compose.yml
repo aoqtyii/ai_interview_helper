@@ -17,8 +17,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -58,7 +56,7 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    command: ["sh", "-c", "npm run prisma:deploy && npm --workspace @aih/api run start:worker"]
+    command: ["npm", "--workspace", "@aih/api", "run", "start:worker"]
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       DATABASE_URL: postgresql://aih:aih@postgres:5432/aih?schema=public
@@ -71,6 +69,8 @@ services:
       AI_DEFAULT_MODEL: ${AI_DEFAULT_MODEL:-gpt-5.4-mini}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
+      api:
+        condition: service_started
       postgres:
         condition: service_healthy
       redis:

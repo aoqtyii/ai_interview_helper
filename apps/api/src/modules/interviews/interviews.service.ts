@@ -121,21 +121,18 @@ export class InterviewsService {
       }
     });
 
-    const existingPlan = await this.prisma.improvementPlan.findFirst({ where: { reportId: report.id } });
-    const planData = {
-      userId: session.userId,
-      reportId: report.id,
-      items: parsed.recommendations.map((title: string, index: number) => ({
-        title,
-        priority: index + 1,
-        status: 'TODO'
-      }))
-    };
-    if (existingPlan) {
-      await this.prisma.improvementPlan.update({ where: { id: existingPlan.id }, data: planData });
-    } else {
-      await this.prisma.improvementPlan.create({ data: planData });
-    }
+    await this.prisma.improvementPlan.upsert({
+      where: { reportId: report.id },
+      create: {
+        userId: session.userId,
+        reportId: report.id,
+        items: this.buildImprovementItems(parsed.recommendations)
+      },
+      update: {
+        userId: session.userId,
+        items: this.buildImprovementItems(parsed.recommendations)
+      }
+    });
 
     await this.prisma.interviewSession.update({
       where: { id: sessionId },
@@ -166,5 +163,13 @@ export class InterviewsService {
         recommendations: ['复盘回答结构', '补充项目指标', '准备 AI 应用落地案例']
       };
     }
+  }
+
+  private buildImprovementItems(recommendations: string[]) {
+    return recommendations.map((title: string, index: number) => ({
+      title,
+      priority: index + 1,
+      status: 'TODO'
+    }));
   }
 }

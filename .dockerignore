@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.*
+node_modules
+apps/*/node_modules
+apps/*/.next
+apps/*/dist
+coverage
+.turbo
+*.log
+*.tsbuildinfo
+tmp
+postgres-data
+redis-data
