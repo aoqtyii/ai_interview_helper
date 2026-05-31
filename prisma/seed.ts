@@ -1,7 +1,16 @@
+import { pbkdf2Sync, randomBytes } from 'node:crypto';
 import { PrismaClient, Difficulty, FeedType, LearningType, UserRole } from '@prisma/client';
-import { hashPassword } from '../apps/api/src/common/password';
 
 const prisma = new PrismaClient();
+const PASSWORD_ITERATIONS = 120_000;
+const PASSWORD_KEY_LENGTH = 32;
+const PASSWORD_DIGEST = 'sha256';
+
+function hashPassword(password: string) {
+  const salt = randomBytes(16).toString('hex');
+  const hash = pbkdf2Sync(password, salt, PASSWORD_ITERATIONS, PASSWORD_KEY_LENGTH, PASSWORD_DIGEST).toString('hex');
+  return `${PASSWORD_ITERATIONS}.${salt}.${hash}`;
+}
 
 async function main() {
   const aiPm = await upsertRole('AI 产品经理', 'ai-product-manager', '负责 AI 产品发现、方案设计、指标验证和跨团队落地。');
@@ -50,24 +59,42 @@ async function main() {
         }
       });
 
-      await prisma.interviewQuestion.createMany({
-        data: [
-          {
-            roleProfileId: entry.role.id,
-            skillId: skill.id,
-            difficulty: Difficulty.MID,
-            question: `请结合项目经历说明你如何体现「${name}」能力？`,
-            rubric: {
-              dimensions: ['结构化表达', 'AI 应用深度', '指标意识', '落地判断'],
-              passing: '能给出具体场景、方案取舍、指标和复盘。'
-            }
+      await prisma.interviewQuestion.upsert({
+        where: { id: `${skill.id}-question-mid` },
+        update: {
+          roleProfileId: entry.role.id,
+          skillId: skill.id,
+          difficulty: Difficulty.MID,
+          question: `请结合项目经历说明你如何体现「${name}」能力？`,
+          rubric: {
+            dimensions: ['结构化表达', 'AI 应用深度', '指标意识', '落地判断'],
+            passing: '能给出具体场景、方案取舍、指标和复盘。'
           }
-        ],
-        skipDuplicates: true
+        },
+        create: {
+          id: `${skill.id}-question-mid`,
+          roleProfileId: entry.role.id,
+          skillId: skill.id,
+          difficulty: Difficulty.MID,
+          question: `请结合项目经历说明你如何体现「${name}」能力？`,
+          rubric: {
+            dimensions: ['结构化表达', 'AI 应用深度', '指标意识', '落地判断'],
+            passing: '能给出具体场景、方案取舍、指标和复盘。'
+          }
+        }
       });
 
-      await prisma.learningItem.create({
-        data: {
+      await prisma.learningItem.upsert({
+        where: { id: `${skill.id}-learning-task` },
+        update: {
+          skillId: skill.id,
+          type: LearningType.TASK,
+          title: `${name}：30 分钟面试案例打磨`,
+          description: `围绕 ${description} 准备一个 STAR + 指标 + 风险取舍的中文回答。`,
+          estimatedMinutes: 30
+        },
+        create: {
+          id: `${skill.id}-learning-task`,
           skillId: skill.id,
           type: LearningType.TASK,
           title: `${name}：30 分钟面试案例打磨`,
