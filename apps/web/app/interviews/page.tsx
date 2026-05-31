@@ -29,6 +29,7 @@ export default function InterviewsPage() {
   }, []);
 
   const selectedRole = useMemo(() => roles[0], [roles]);
+  const initialLoading = loading && !roles.length && !sessions.length && !current;
 
   async function startInterview() {
     if (!selectedRole) return;
@@ -82,6 +83,7 @@ export default function InterviewsPage() {
           <h2 className="text-lg font-semibold">启动模拟面试</h2>
           {error && <div className="mt-4 rounded-md border border-red-400/40 bg-red-950/20 p-3 text-sm text-red-100">{error}</div>}
           <div className="mt-4 space-y-3">
+            {initialLoading && <InlineLoading title="正在加载面试配置" />}
             {!loading && !roles.length && !error && <div className="rounded-md border border-dashed border-line p-4 text-sm text-slate-400">暂无可用岗位画像</div>}
             {roles.map((role) => (
               <div key={role.id} className="rounded-md border border-line bg-black/20 p-4">
@@ -92,7 +94,7 @@ export default function InterviewsPage() {
           </div>
           <Button className="mt-5 w-full" onClick={() => void startInterview()} disabled={loading || !selectedRole}>
             <Bot className="h-4 w-4" />
-            开始 AI Agent 主题面试
+            {loading ? '处理中' : '开始 AI Agent 主题面试'}
           </Button>
 
           <h3 className="mt-8 text-sm font-semibold text-slate-300">历史记录</h3>
@@ -116,6 +118,7 @@ export default function InterviewsPage() {
             {current?.report && <span className="rounded-md bg-acid/10 px-2 py-1 text-sm text-acid">评分 {current.report.overallScore}</span>}
           </div>
           <div className="space-y-3">
+            {loading && current && <div className="rounded-md border border-cyan/30 bg-cyan/10 p-3 text-sm text-cyan">正在等待后端响应...</div>}
             {(current?.turns ?? []).map((turn) => (
               <div
                 key={turn.id}
@@ -155,4 +158,17 @@ function formatApiError(error: unknown) {
   if (error instanceof ApiError && error.status === 401) return '请先登录后再使用模拟面试。';
   if (error instanceof ApiError && error.status === 403) return '当前账号没有访问该资源的权限。';
   return '请求失败，请确认后端服务可用后重试。';
+}
+
+function InlineLoading({ title }: { title: string }) {
+  return (
+    <div className="rounded-md border border-line bg-white/[0.03] p-4" aria-busy="true">
+      <div className="text-sm text-slate-300">{title}</div>
+      <div className="mt-3 grid gap-2">
+        {[0, 1, 2].map((item) => (
+          <div key={item} className="h-10 animate-pulse rounded-md bg-white/[0.06]" />
+        ))}
+      </div>
+    </div>
+  );
 }

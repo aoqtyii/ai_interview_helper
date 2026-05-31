@@ -12,6 +12,8 @@ export default function AdminPage() {
   const [logs, setLogs] = useState<AiRunLog[]>([]);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
 
   useEffect(() => {
     api<AiRunLog[]>('/admin/ai-run-logs')
@@ -19,10 +21,12 @@ export default function AdminPage() {
         setLogs(nextLogs);
         setError('');
       })
-      .catch((nextError) => setError(formatAdminError(nextError)));
+      .catch((nextError) => setError(formatAdminError(nextError)))
+      .finally(() => setLoading(false));
   }, []);
 
   async function runIngestion() {
+    setRunning(true);
     setMessage('抓取任务执行中...');
     setError('');
     const result = await api('/admin/ingestion/run', { method: 'POST' }).catch((nextError) => {
@@ -30,6 +34,7 @@ export default function AdminPage() {
       return null;
     });
     setMessage(result ? '抓取任务已完成。' : '');
+    setRunning(false);
   }
 
   return (
@@ -41,9 +46,9 @@ export default function AdminPage() {
             <div className="rounded-md border border-line bg-black/20 p-4">岗位画像、题库、Prompt 模板和资讯源通过 Admin API 管理。</div>
             <div className="rounded-md border border-line bg-black/20 p-4">所有 AI 调用会记录 provider、model、状态和耗时。</div>
           </div>
-          <Button className="mt-5 w-full" onClick={() => void runIngestion()}>
+          <Button className="mt-5 w-full" onClick={() => void runIngestion()} disabled={running}>
             <Play className="h-4 w-4" />
-            触发资讯抓取
+            {running ? '执行中' : '触发资讯抓取'}
           </Button>
           {error && <p className="mt-3 rounded-md border border-red-400/40 bg-red-950/20 p-3 text-sm text-red-100">{error}</p>}
           {message && <p className="mt-3 text-sm text-slate-300">{message}</p>}
@@ -65,7 +70,14 @@ export default function AdminPage() {
                 </tr>
               </thead>
               <tbody>
-                {!logs.length && (
+                {loading && (
+                  <tr>
+                    <td className="px-3 py-6 text-center text-slate-400" colSpan={4}>
+                      正在加载 AI 调用日志
+                    </td>
+                  </tr>
+                )}
+                {!loading && !logs.length && (
                   <tr>
                     <td className="px-3 py-6 text-center text-slate-400" colSpan={4}>
                       暂无 AI 调用日志

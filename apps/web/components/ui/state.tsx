@@ -12,6 +12,25 @@ export function EmptyState({ title, description }: { title: string; description:
   );
 }
 
+export function LoadingState({ title = '正在加载', description = '正在从后端读取真实数据。' }: { title?: string; description?: string }) {
+  return (
+    <Panel aria-busy="true">
+      <div className="flex items-center gap-3">
+        <div className="h-3 w-3 rounded-full bg-cyan shadow-[0_0_18px_rgba(34,211,238,0.75)]" />
+        <div>
+          <h2 className="text-lg font-semibold">{title}</h2>
+          <p className="mt-1 text-sm text-slate-400">{description}</p>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
+        {[0, 1, 2].map((item) => (
+          <div key={item} className="h-20 animate-pulse rounded-md border border-line bg-white/[0.04]" />
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
 export function ErrorState({ error }: { error: unknown }) {
   const unauthorized = error instanceof ApiError && error.status === 401;
 
