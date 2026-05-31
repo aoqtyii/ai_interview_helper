@@ -7,6 +7,7 @@ RUN npm install
 
 FROM deps AS build
 COPY tsconfig.base.json ./
+COPY eslint.config.mjs ./
 COPY apps/web apps/web
 RUN npm --workspace @aih/web run build
 
