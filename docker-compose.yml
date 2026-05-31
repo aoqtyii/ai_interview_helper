@@ -74,6 +74,13 @@ services:
       AI_MOCK_MODE: ${AI_MOCK_MODE:-true}
       AI_DEFAULT_MODEL: ${AI_DEFAULT_MODEL:-gpt-5.4-mini}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      WORKER_HEALTH_FILE: /tmp/aih-worker-health.json
+    healthcheck:
+      test: ["CMD", "npm", "--workspace", "@aih/api", "run", "health:worker"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
       api:
         condition: service_healthy

@@ -6,6 +6,7 @@
     "start": "node dist/main.js",
     "start:dev": "tsx watch src/main.ts",
     "start:worker": "node dist/worker.js",
+    "health:worker": "node dist/worker-health.js",
     "build": "tsc -p tsconfig.json",
     "lint": "eslint src/**/*.ts",
     "test": "vitest run",
