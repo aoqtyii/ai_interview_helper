@@ -1,5 +1,6 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
 import { Response } from 'express';
+import { appLogger } from './logger';
 import { RequestWithId } from './request-id.middleware';
 
 type ErrorBody = {
@@ -21,11 +22,12 @@ export class HttpErrorFilter implements ExceptionFilter {
     const body = this.toBody(exception, statusCode, request);
 
     if (!(exception instanceof HttpException)) {
-      console.error('Unhandled request error', {
+      appLogger.error({
+        event: 'unhandled_request_error',
         requestId: body.requestId,
         path: body.path,
         error: exception
-      });
+      }, 'Unhandled request error');
     }
 
     response.status(statusCode).json(body);
