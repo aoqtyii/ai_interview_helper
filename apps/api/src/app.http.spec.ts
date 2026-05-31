@@ -1,20 +1,22 @@
 import 'reflect-metadata';
-import cookieParser from 'cookie-parser';
 import { AddressInfo } from 'node:net';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { UserRole, UserStatus } from '@prisma/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppModule } from './app.module';
+import { configureApp } from './configure-app';
 import { PrismaService } from './prisma/prisma.service';
 
 describe('API HTTP boundaries', () => {
   let app: INestApplication;
   let baseUrl: string;
   let jwt: JwtService;
+  let sourceFeedCreate: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
+    sourceFeedCreate = vi.fn();
     const prisma = {
       user: {
         findUnique: vi.fn((args: { where: { id?: string } }) => {
@@ -41,6 +43,9 @@ describe('API HTTP boundaries', () => {
       },
       aiRunLog: {
         findMany: vi.fn().mockResolvedValue([])
+      },
+      sourceFeed: {
+        create: sourceFeedCreate
       }
     };
 
@@ -50,8 +55,7 @@ describe('API HTTP boundaries', () => {
       .compile();
 
     app = moduleRef.createNestApplication();
-    app.use(cookieParser());
-    app.useGlobalPipes(new ValidationPipe({ forbidNonWhitelisted: true, transform: true, whitelist: true }));
+    configureApp(app);
     await app.listen(0);
 
     jwt = app.get(JwtService);
@@ -66,6 +70,7 @@ describe('API HTTP boundaries', () => {
   it('keeps health public and metrics protected by admin role', async () => {
     const health = await fetch(`${baseUrl}/health`);
     expect(health.status).toBe(200);
+    expect(health.headers.get('x-request-id')).toBeTruthy();
 
     const missingToken = await fetch(`${baseUrl}/metrics`);
     expect(missingToken.status).toBe(401);
@@ -100,5 +105,22 @@ describe('API HTTP boundaries', () => {
     });
 
     expect(response.status).toBe(400);
+    const body = (await response.json()) as { statusCode: number; path: string; requestId: string };
+    expect(body.statusCode).toBe(400);
+    expect(body.path).toBe('/admin/source-feeds');
+    expect(body.requestId).toBeTruthy();
+    expect(sourceFeedCreate).not.toHaveBeenCalled();
+  });
+
+  it('preserves incoming request ids on error responses', async () => {
+    const requestId = 'test-request-id-1';
+    const response = await fetch(`${baseUrl}/metrics`, {
+      headers: { 'x-request-id': requestId }
+    });
+    const body = (await response.json()) as { requestId: string };
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get('x-request-id')).toBe(requestId);
+    expect(body.requestId).toBe(requestId);
   });
 });
