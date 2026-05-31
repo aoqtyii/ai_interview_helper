@@ -26,7 +26,7 @@
     "typecheck:api": "npm --workspace @aih/api run typecheck",
     "prisma:generate": "prisma generate",
     "prisma:init": "tsx prisma/init-db.ts",
-    "prisma:deploy": "npm run prisma:init && prisma db push --skip-generate",
+    "prisma:deploy": "npm run prisma:init && prisma migrate deploy",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts"
   },
