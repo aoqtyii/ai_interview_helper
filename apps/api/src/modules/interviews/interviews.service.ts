@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Difficulty, InterviewStatus, Speaker, UserRole } from '@prisma/client';
 import { AiGatewayService } from '../ai/ai-gateway.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -147,22 +147,19 @@ export class InterviewsService {
   }
 
   private parseReport(raw: string) {
+    let parsed: unknown;
+
     try {
-      const parsed = JSON.parse(raw) as {
-        overallScore: number;
-        dimensionScores: Record<string, number>;
-        summary: string;
-        recommendations: string[];
-      };
-      return parsed;
+      parsed = JSON.parse(raw);
     } catch {
-      return {
-        overallScore: 70,
-        dimensionScores: { structuredCommunication: 70 },
-        summary: raw.slice(0, 800),
-        recommendations: ['复盘回答结构', '补充项目指标', '准备 AI 应用落地案例']
-      };
+      throw new BadGatewayException('AI assessment report is not valid JSON');
     }
+
+    if (!this.isValidReport(parsed)) {
+      throw new BadGatewayException('AI assessment report schema is invalid');
+    }
+
+    return parsed;
   }
 
   private buildImprovementItems(recommendations: string[]) {
@@ -171,5 +168,30 @@ export class InterviewsService {
       priority: index + 1,
       status: 'TODO'
     }));
+  }
+
+  private isValidReport(value: unknown): value is {
+    overallScore: number;
+    dimensionScores: Record<string, number>;
+    summary: string;
+    recommendations: string[];
+  } {
+    if (!value || typeof value !== 'object') return false;
+    const report = value as Record<string, unknown>;
+    if (!this.isScore(report.overallScore)) return false;
+    if (!this.isScoreRecord(report.dimensionScores)) return false;
+    if (typeof report.summary !== 'string' || !report.summary.trim()) return false;
+    if (!Array.isArray(report.recommendations)) return false;
+    return report.recommendations.every((recommendation) => typeof recommendation === 'string' && Boolean(recommendation.trim()));
+  }
+
+  private isScoreRecord(value: unknown): value is Record<string, number> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const entries = Object.entries(value);
+    return entries.length > 0 && entries.every(([key, score]) => Boolean(key.trim()) && this.isScore(score));
+  }
+
+  private isScore(value: unknown): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 100;
   }
 }
