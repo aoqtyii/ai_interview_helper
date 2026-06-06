@@ -1,6 +1,6 @@
 import { validateSync } from 'class-validator';
 import { describe, expect, it } from 'vitest';
-import { CreateSourceFeedDto } from './admin.dto';
+import { CreateInterviewQuestionDto, CreateRoleProfileDto, CreateSourceFeedDto } from './admin.dto';
 
 describe('CreateSourceFeedDto', () => {
   it('rejects non-url feed values', () => {
@@ -19,5 +19,37 @@ describe('CreateSourceFeedDto', () => {
     dto.url = 'https://example.com/feed.xml';
 
     expect(validateSync(dto)).toHaveLength(0);
+  });
+
+  it('rejects blank source feed names', () => {
+    const dto = new CreateSourceFeedDto();
+    dto.name = '   ';
+    dto.type = 'RSS' as never;
+    dto.url = 'https://example.com/feed.xml';
+
+    expect(validateSync(dto).length).toBeGreaterThan(0);
+  });
+});
+
+describe('CreateRoleProfileDto', () => {
+  it('rejects blank text fields', () => {
+    const dto = new CreateRoleProfileDto();
+    dto.name = 'AI PM';
+    dto.slug = '   ';
+    dto.description = 'Product role';
+
+    expect(validateSync(dto).length).toBeGreaterThan(0);
+  });
+});
+
+describe('CreateInterviewQuestionDto', () => {
+  it('rejects blank question text', () => {
+    const dto = new CreateInterviewQuestionDto();
+    dto.roleProfileId = 'role-1';
+    dto.difficulty = 'MID' as never;
+    dto.question = '   ';
+    dto.rubric = {};
+
+    expect(validateSync(dto).length).toBeGreaterThan(0);
   });
 });

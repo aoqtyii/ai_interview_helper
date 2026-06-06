@@ -6,6 +6,8 @@ playwright-report
 test-results
 .turbo
 .env
+.env.*
+!.env.example
 .env.local
 .DS_Store
 *.log

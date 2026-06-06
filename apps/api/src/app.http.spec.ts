@@ -207,6 +207,31 @@ describe('API HTTP boundaries', () => {
     expect(interviewSessionUpdate).not.toHaveBeenCalled();
   });
 
+  it('rejects blank interview answers before calling AI', async () => {
+    const userToken = await jwt.signAsync({ sub: 'user-1' });
+
+    const response = await fetch(`${baseUrl}/interviews/sessions/session-1/turns`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${userToken}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ content: '   ' })
+    });
+
+    const body = (await response.json()) as {
+      statusCode: number;
+      path: string;
+      requestId: string;
+    };
+
+    expect(response.status).toBe(400);
+    expect(body.statusCode).toBe(400);
+    expect(body.path).toBe('/interviews/sessions/session-1/turns');
+    expect(body.requestId).toBeTruthy();
+    expect(aiRun).not.toHaveBeenCalled();
+  });
+
   it('prevents users from reading another user interview session', async () => {
     const otherUserToken = await jwt.signAsync({ sub: 'user-2' });
 
