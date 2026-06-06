@@ -5,6 +5,8 @@ export type RoleProfile = {
   skills?: { id: string; name: string; category: string; description: string }[];
 };
 
+export type Difficulty = 'JUNIOR' | 'MID' | 'SENIOR';
+
 export type CurrentUser = {
   id: string;
   email: string;
@@ -15,11 +17,16 @@ export type CurrentUser = {
 export type InterviewSession = {
   id: string;
   status: string;
-  difficulty: string;
+  difficulty: Difficulty;
   topic?: string;
-  roleProfile: { name: string };
+  roleProfile: { id?: string; name: string };
   turns?: { id: string; speaker: string; content: string }[];
-  report?: { overallScore: number; summary?: string };
+  report?: {
+    overallScore: number;
+    dimensionScores?: Record<string, number>;
+    summary?: string;
+    recommendations?: string[];
+  };
 };
 
 export type LearningItem = {

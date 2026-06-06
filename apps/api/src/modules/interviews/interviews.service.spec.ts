@@ -90,6 +90,33 @@ describe('InterviewsService', () => {
     expect(prisma.interviewSession.update).not.toHaveBeenCalled();
   });
 
+  it('requires at least two candidate answers before generating a report', async () => {
+    const session = buildSessionWithCandidateAnswers(1);
+    const prisma = {
+      interviewSession: {
+        findUnique: vi.fn().mockResolvedValue(session),
+        update: vi.fn()
+      },
+      assessmentReport: {
+        upsert: vi.fn()
+      },
+      improvementPlan: {
+        upsert: vi.fn()
+      }
+    };
+    const ai = {
+      run: vi.fn()
+    };
+    const service = new InterviewsService(prisma as never, ai as never);
+
+    await expect(service.finish('user-1', UserRole.USER, 'session-1')).rejects.toThrow('At least 2 candidate answers are required');
+
+    expect(ai.run).not.toHaveBeenCalled();
+    expect(prisma.assessmentReport.upsert).not.toHaveBeenCalled();
+    expect(prisma.improvementPlan.upsert).not.toHaveBeenCalled();
+    expect(prisma.interviewSession.update).not.toHaveBeenCalled();
+  });
+
   it('does not persist candidate answers when the follow-up AI turn fails', async () => {
     const session = buildSession();
     const prisma = {
@@ -148,6 +175,55 @@ describe('InterviewsService', () => {
     expect(prisma.$transaction).toHaveBeenCalledOnce();
   });
 
+  it('stores the fifth candidate answer without generating another follow-up question', async () => {
+    const session = buildSessionWithCandidateAnswers(4);
+    const updatedSession = buildSessionWithCandidateAnswers(5);
+    const prisma = {
+      interviewSession: {
+        findUnique: vi.fn().mockResolvedValueOnce(session).mockResolvedValueOnce(updatedSession)
+      },
+      interviewTurn: {
+        create: vi.fn().mockResolvedValue({ id: 'turn-final' })
+      },
+      $transaction: vi.fn()
+    };
+    const ai = {
+      run: vi.fn()
+    };
+    const service = new InterviewsService(prisma as never, ai as never);
+
+    await expect(service.addTurn('user-1', UserRole.USER, 'session-1', 'final candidate answer')).resolves.toEqual(updatedSession);
+
+    expect(ai.run).not.toHaveBeenCalled();
+    expect(prisma.interviewTurn.create).toHaveBeenCalledWith({
+      data: { sessionId: 'session-1', speaker: Speaker.CANDIDATE, content: 'final candidate answer' }
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects additional answers after the maximum answer rounds', async () => {
+    const session = buildSessionWithCandidateAnswers(5);
+    const prisma = {
+      interviewSession: {
+        findUnique: vi.fn().mockResolvedValue(session)
+      },
+      interviewTurn: {
+        create: vi.fn()
+      },
+      $transaction: vi.fn()
+    };
+    const ai = {
+      run: vi.fn()
+    };
+    const service = new InterviewsService(prisma as never, ai as never);
+
+    await expect(service.addTurn('user-1', UserRole.USER, 'session-1', 'extra answer')).rejects.toThrow('Interview has reached the maximum answer rounds');
+
+    expect(ai.run).not.toHaveBeenCalled();
+    expect(prisma.interviewTurn.create).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('rejects AI assessment JSON with invalid score schema', async () => {
     const session = buildSession();
     const prisma = {
@@ -183,6 +259,10 @@ describe('InterviewsService', () => {
 });
 
 function buildSession() {
+  return buildSessionWithCandidateAnswers(2);
+}
+
+function buildSessionWithCandidateAnswers(candidateAnswers: number) {
   return {
     id: 'session-1',
     userId: 'user-1',
@@ -196,16 +276,14 @@ function buildSession() {
     createdAt: new Date(),
     updatedAt: new Date(),
     roleProfile: { id: 'role-1', name: 'AI Agent Developer', skills: [] },
-    turns: [
-      {
-        id: 'turn-1',
-        sessionId: 'session-1',
-        speaker: Speaker.CANDIDATE,
-        content: 'answer',
-        metadata: {},
-        createdAt: new Date()
-      }
-    ],
+    turns: Array.from({ length: candidateAnswers }, (_, index) => ({
+      id: `turn-${index + 1}`,
+      sessionId: 'session-1',
+      speaker: Speaker.CANDIDATE,
+      content: `answer ${index + 1}`,
+      metadata: {},
+      createdAt: new Date()
+    })),
     report: null
   };
 }

@@ -38,7 +38,7 @@ test('interview creation failures are visible to users', async ({ page }) => {
   await page.goto('/interviews');
 
   const responsePromise = page.waitForResponse((response) => response.url().endsWith('/interviews/sessions') && response.request().method() === 'POST');
-  await page.locator('button').first().click();
+  await page.getByRole('button', { name: '开始面试' }).click();
   const response = await responsePromise;
 
   expect(response.status()).toBe(502);

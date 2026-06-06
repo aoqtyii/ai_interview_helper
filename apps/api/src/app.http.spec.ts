@@ -82,6 +82,11 @@ describe('API HTTP boundaries', () => {
                 id: 'turn-1',
                 speaker: Speaker.CANDIDATE,
                 content: 'I would define success metrics before launching the agent.'
+              },
+              {
+                id: 'turn-2',
+                speaker: Speaker.CANDIDATE,
+                content: 'I would add offline evaluation and rollout guardrails.'
               }
             ],
             roleProfile: {

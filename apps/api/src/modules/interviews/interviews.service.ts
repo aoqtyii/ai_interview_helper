@@ -1,7 +1,10 @@
-import { BadGatewayException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Difficulty, InterviewStatus, Speaker, UserRole } from '@prisma/client';
 import { AiGatewayService } from '../ai/ai-gateway.service';
 import { PrismaService } from '../../prisma/prisma.service';
+
+const MAX_CANDIDATE_ANSWERS = 5;
+const MIN_CANDIDATE_ANSWERS_FOR_REPORT = 2;
 
 @Injectable()
 export class InterviewsService {
@@ -64,6 +67,18 @@ export class InterviewsService {
   async addTurn(userId: string, role: UserRole, sessionId: string, content: string) {
     const session = await this.get(userId, role, sessionId);
     if (session.status !== InterviewStatus.IN_PROGRESS) throw new ForbiddenException('Session is not in progress');
+    const candidateAnswerCount = this.countCandidateAnswers(session.turns);
+    if (candidateAnswerCount >= MAX_CANDIDATE_ANSWERS) {
+      throw new ForbiddenException('Interview has reached the maximum answer rounds');
+    }
+
+    if (candidateAnswerCount + 1 >= MAX_CANDIDATE_ANSWERS) {
+      await this.prisma.interviewTurn.create({
+        data: { sessionId, speaker: Speaker.CANDIDATE, content }
+      });
+
+      return this.get(userId, role, sessionId);
+    }
 
     const transcript = [...session.turns, { speaker: Speaker.CANDIDATE, content }]
       .map((turn) => `${turn.speaker}: ${turn.content}`)
@@ -92,6 +107,9 @@ export class InterviewsService {
     const session = await this.get(userId, role, sessionId);
     if (session.status === InterviewStatus.COMPLETED && session.report) {
       return session;
+    }
+    if (this.countCandidateAnswers(session.turns) < MIN_CANDIDATE_ANSWERS_FOR_REPORT) {
+      throw new BadRequestException('At least 2 candidate answers are required before generating a report');
     }
 
     const transcript = session.turns.map((turn) => `${turn.speaker}: ${turn.content}`).join('\n');
@@ -192,5 +210,9 @@ export class InterviewsService {
 
   private isScore(value: unknown): value is number {
     return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 100;
+  }
+
+  private countCandidateAnswers(turns: Array<{ speaker: Speaker }>) {
+    return turns.filter((turn) => turn.speaker === Speaker.CANDIDATE).length;
   }
 }
