@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Post, Res } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { CurrentUser, AuthUser } from '../../common/current-user.decorator';
 import { Public } from '../../common/public.decorator';
 import { LoginDto } from './dto/login.dto';

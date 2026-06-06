@@ -3,19 +3,28 @@ import { AddressInfo } from 'node:net';
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
-import { UserRole, UserStatus } from '@prisma/client';
+import { InterviewStatus, Speaker, UserRole, UserStatus } from '@prisma/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppModule } from './app.module';
 import { configureApp } from './configure-app';
+import { AiGatewayService } from './modules/ai/ai-gateway.service';
 import { PrismaService } from './prisma/prisma.service';
 
 describe('API HTTP boundaries', () => {
   let app: INestApplication;
   let baseUrl: string;
   let jwt: JwtService;
+  let aiRun: ReturnType<typeof vi.fn>;
+  let assessmentReportUpsert: ReturnType<typeof vi.fn>;
+  let improvementPlanUpsert: ReturnType<typeof vi.fn>;
+  let interviewSessionUpdate: ReturnType<typeof vi.fn>;
   let sourceFeedCreate: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
+    aiRun = vi.fn().mockResolvedValue('not-json');
+    assessmentReportUpsert = vi.fn();
+    improvementPlanUpsert = vi.fn();
+    interviewSessionUpdate = vi.fn();
     sourceFeedCreate = vi.fn();
     const prisma = {
       user: {
@@ -44,6 +53,38 @@ describe('API HTTP boundaries', () => {
       aiRunLog: {
         findMany: vi.fn().mockResolvedValue([])
       },
+      assessmentReport: {
+        upsert: assessmentReportUpsert
+      },
+      improvementPlan: {
+        upsert: improvementPlanUpsert
+      },
+      interviewSession: {
+        findUnique: vi.fn((args: { where: { id?: string } }) => {
+          if (args.where.id !== 'session-1') return Promise.resolve(null);
+
+          return Promise.resolve({
+            id: 'session-1',
+            userId: 'user-1',
+            roleProfileId: 'role-1',
+            status: InterviewStatus.IN_PROGRESS,
+            turns: [
+              {
+                id: 'turn-1',
+                speaker: Speaker.CANDIDATE,
+                content: 'I would define success metrics before launching the agent.'
+              }
+            ],
+            roleProfile: {
+              id: 'role-1',
+              name: 'AI Agent Developer',
+              skills: []
+            },
+            report: null
+          });
+        }),
+        update: interviewSessionUpdate
+      },
       sourceFeed: {
         create: sourceFeedCreate
       }
@@ -52,6 +93,8 @@ describe('API HTTP boundaries', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(PrismaService)
       .useValue(prisma)
+      .overrideProvider(AiGatewayService)
+      .useValue({ run: aiRun })
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -122,5 +165,36 @@ describe('API HTTP boundaries', () => {
     expect(response.status).toBe(401);
     expect(response.headers.get('x-request-id')).toBe(requestId);
     expect(body.requestId).toBe(requestId);
+  });
+
+  it('returns 502 and avoids report writes when AI assessment output is invalid', async () => {
+    const userToken = await jwt.signAsync({ sub: 'user-1' });
+    const requestId = 'invalid-assessment-report-1';
+
+    const response = await fetch(`${baseUrl}/interviews/sessions/session-1/finish`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${userToken}`,
+        'x-request-id': requestId
+      }
+    });
+
+    const body = (await response.json()) as {
+      statusCode: number;
+      error: string;
+      message: string;
+      path: string;
+      requestId: string;
+    };
+
+    expect(response.status).toBe(502);
+    expect(body.statusCode).toBe(502);
+    expect(body.message).toBe('AI assessment report is not valid JSON');
+    expect(body.path).toBe('/interviews/sessions/session-1/finish');
+    expect(body.requestId).toBe(requestId);
+    expect(aiRun).toHaveBeenCalledWith(expect.objectContaining({ taskType: 'assessment_report', userId: 'user-1' }));
+    expect(assessmentReportUpsert).not.toHaveBeenCalled();
+    expect(improvementPlanUpsert).not.toHaveBeenCalled();
+    expect(interviewSessionUpdate).not.toHaveBeenCalled();
   });
 });

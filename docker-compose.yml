@@ -76,9 +76,9 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       WORKER_HEALTH_FILE: /tmp/aih-worker-health.json
     healthcheck:
-      test: ["CMD", "npm", "--workspace", "@aih/api", "run", "health:worker"]
+      test: ["CMD", "node", "apps/api/dist/worker-health.js"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 5
       start_period: 30s
     depends_on:

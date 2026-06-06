@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { AuthUser, CurrentUser } from '../../common/current-user.decorator';
 import { AddInterviewTurnDto, CreateInterviewSessionDto } from './dto/interview.dto';
@@ -6,7 +6,7 @@ import { InterviewsService } from './interviews.service';
 
 @Controller('interviews')
 export class InterviewsController {
-  constructor(private readonly interviews: InterviewsService) {}
+  constructor(@Inject(InterviewsService) private readonly interviews: InterviewsService) {}
 
   @Post('sessions')
   create(@CurrentUser() user: AuthUser, @Body() body: CreateInterviewSessionDto) {

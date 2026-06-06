@@ -1,4 +1,4 @@
-import { BadGatewayException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Difficulty, InterviewStatus, Speaker, UserRole } from '@prisma/client';
 import { AiGatewayService } from '../ai/ai-gateway.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -6,8 +6,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 @Injectable()
 export class InterviewsService {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly ai: AiGatewayService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(AiGatewayService) private readonly ai: AiGatewayService
   ) {}
 
   async create(userId: string, input: { roleProfileId: string; difficulty?: Difficulty; topic?: string }) {

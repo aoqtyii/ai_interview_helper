@@ -1,5 +1,5 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { appLogger } from './logger';
 import { RequestWithId } from './request-id.middleware';
 
@@ -26,7 +26,7 @@ export class HttpErrorFilter implements ExceptionFilter {
         event: 'unhandled_request_error',
         requestId: body.requestId,
         path: body.path,
-        error: exception
+        error: this.serializeException(exception)
       }, 'Unhandled request error');
     }
 
@@ -66,5 +66,17 @@ export class HttpErrorFilter implements ExceptionFilter {
     }
 
     return HttpStatus[statusCode] ?? 'Error';
+  }
+
+  private serializeException(exception: unknown) {
+    if (exception instanceof Error) {
+      return {
+        name: exception.name,
+        message: exception.message,
+        stack: exception.stack
+      };
+    }
+
+    return exception;
   }
 }
