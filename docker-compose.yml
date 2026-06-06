@@ -40,7 +40,7 @@ services:
       AI_PROVIDER: ${AI_PROVIDER:-openai-compatible}
       AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
       AI_API_KEY: ${AI_API_KEY:-}
-      AI_MOCK_MODE: ${AI_MOCK_MODE:-true}
+      AI_MOCK_MODE: ${AI_MOCK_MODE:-false}
       AI_DEFAULT_MODEL: ${AI_DEFAULT_MODEL:-gpt-5.4-mini}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
@@ -71,7 +71,7 @@ services:
       AI_PROVIDER: ${AI_PROVIDER:-openai-compatible}
       AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
       AI_API_KEY: ${AI_API_KEY:-}
-      AI_MOCK_MODE: ${AI_MOCK_MODE:-true}
+      AI_MOCK_MODE: ${AI_MOCK_MODE:-false}
       AI_DEFAULT_MODEL: ${AI_DEFAULT_MODEL:-gpt-5.4-mini}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       WORKER_HEALTH_FILE: /tmp/aih-worker-health.json

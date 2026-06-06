@@ -16,7 +16,7 @@ export function loadAppConfig(env: Record<string, string | undefined> = process.
   return {
     nodeEnv,
     jwtSecret: jwtSecret || 'dev-only-change-me',
-    aiMockMode: parseBoolean(env.AI_MOCK_MODE) || (!isProduction && !env.AI_API_KEY)
+    aiMockMode: parseBoolean(env.AI_MOCK_MODE)
   };
 }
 

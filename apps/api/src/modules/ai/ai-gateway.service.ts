@@ -30,7 +30,9 @@ export class AiGatewayService {
     }
 
     if (!process.env.AI_API_KEY) {
-      throw new Error('AI_API_KEY is required when AI_MOCK_MODE is disabled');
+      const message = 'AI_API_KEY is required when AI_MOCK_MODE is disabled';
+      await this.logRun(request, provider, model, Date.now() - started, AiRunStatus.FAILED, undefined, message);
+      throw new Error(message);
     }
 
     try {

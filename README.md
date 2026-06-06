@@ -36,4 +36,6 @@ Default seeded accounts:
 
 ## Notes
 
-If `AI_API_KEY` is empty, the backend uses deterministic local mock responses so the interview flow can be developed and tested without external model calls.
+AI calls fail fast when `AI_API_KEY` is empty. Set `AI_MOCK_MODE=true` only when you deliberately want local deterministic AI responses for development.
+
+`npx.cmd prisma validate` requires `DATABASE_URL` in the current shell or `.env`. Docker services use the container database URL from `docker-compose.yml`.

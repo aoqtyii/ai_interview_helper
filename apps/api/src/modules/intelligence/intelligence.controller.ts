@@ -1,10 +1,10 @@
-import { Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Controller, Get, Inject, Param, Post, Query } from '@nestjs/common';
 import { AuthUser, CurrentUser } from '../../common/current-user.decorator';
 import { IntelligenceService } from './intelligence.service';
 
 @Controller('intelligence')
 export class IntelligenceController {
-  constructor(private readonly intelligence: IntelligenceService) {}
+  constructor(@Inject(IntelligenceService) private readonly intelligence: IntelligenceService) {}
 
   @Get('articles')
   list(@Query('tag') tag?: string) {

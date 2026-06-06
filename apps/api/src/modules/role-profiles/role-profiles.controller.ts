@@ -1,9 +1,9 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Inject, Query } from '@nestjs/common';
 import { RoleProfilesService } from './role-profiles.service';
 
 @Controller()
 export class RoleProfilesController {
-  constructor(private readonly roleProfiles: RoleProfilesService) {}
+  constructor(@Inject(RoleProfilesService) private readonly roleProfiles: RoleProfilesService) {}
 
   @Get('role-profiles')
   list() {
