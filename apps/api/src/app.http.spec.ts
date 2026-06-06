@@ -47,6 +47,15 @@ describe('API HTTP boundaries', () => {
             });
           }
 
+          if (args.where.id === 'user-2') {
+            return Promise.resolve({
+              id: 'user-2',
+              email: 'other-user@example.com',
+              role: UserRole.USER,
+              status: UserStatus.ACTIVE
+            });
+          }
+
           return Promise.resolve(null);
         })
       },
@@ -193,6 +202,53 @@ describe('API HTTP boundaries', () => {
     expect(body.path).toBe('/interviews/sessions/session-1/finish');
     expect(body.requestId).toBe(requestId);
     expect(aiRun).toHaveBeenCalledWith(expect.objectContaining({ taskType: 'assessment_report', userId: 'user-1' }));
+    expect(assessmentReportUpsert).not.toHaveBeenCalled();
+    expect(improvementPlanUpsert).not.toHaveBeenCalled();
+    expect(interviewSessionUpdate).not.toHaveBeenCalled();
+  });
+
+  it('prevents users from reading another user interview session', async () => {
+    const otherUserToken = await jwt.signAsync({ sub: 'user-2' });
+
+    const response = await fetch(`${baseUrl}/interviews/sessions/session-1`, {
+      headers: { authorization: `Bearer ${otherUserToken}` }
+    });
+
+    const body = (await response.json()) as {
+      statusCode: number;
+      message: string;
+      path: string;
+      requestId: string;
+    };
+
+    expect(response.status).toBe(403);
+    expect(body.statusCode).toBe(403);
+    expect(body.message).toBe('Cannot access this session');
+    expect(body.path).toBe('/interviews/sessions/session-1');
+    expect(body.requestId).toBeTruthy();
+  });
+
+  it('prevents users from finishing another user interview session', async () => {
+    const otherUserToken = await jwt.signAsync({ sub: 'user-2' });
+
+    const response = await fetch(`${baseUrl}/interviews/sessions/session-1/finish`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${otherUserToken}` }
+    });
+
+    const body = (await response.json()) as {
+      statusCode: number;
+      message: string;
+      path: string;
+      requestId: string;
+    };
+
+    expect(response.status).toBe(403);
+    expect(body.statusCode).toBe(403);
+    expect(body.message).toBe('Cannot access this session');
+    expect(body.path).toBe('/interviews/sessions/session-1/finish');
+    expect(body.requestId).toBeTruthy();
+    expect(aiRun).not.toHaveBeenCalled();
     expect(assessmentReportUpsert).not.toHaveBeenCalled();
     expect(improvementPlanUpsert).not.toHaveBeenCalled();
     expect(interviewSessionUpdate).not.toHaveBeenCalled();
