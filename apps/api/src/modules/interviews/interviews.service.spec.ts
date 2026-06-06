@@ -90,6 +90,64 @@ describe('InterviewsService', () => {
     expect(prisma.interviewSession.update).not.toHaveBeenCalled();
   });
 
+  it('does not persist candidate answers when the follow-up AI turn fails', async () => {
+    const session = buildSession();
+    const prisma = {
+      interviewSession: {
+        findUnique: vi.fn().mockResolvedValue(session)
+      },
+      interviewTurn: {
+        create: vi.fn()
+      },
+      $transaction: vi.fn()
+    };
+    const ai = {
+      run: vi.fn().mockRejectedValue(new BadGatewayException('AI provider failed'))
+    };
+    const service = new InterviewsService(prisma as never, ai as never);
+
+    await expect(service.addTurn('user-1', UserRole.USER, 'session-1', 'candidate answer')).rejects.toThrow('AI provider failed');
+
+    expect(prisma.interviewTurn.create).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('persists candidate and interviewer turns together after the follow-up AI turn succeeds', async () => {
+    const session = buildSession();
+    const updatedSession = {
+      ...session,
+      turns: [
+        ...session.turns,
+        { id: 'turn-2', sessionId: 'session-1', speaker: Speaker.CANDIDATE, content: 'candidate answer', metadata: {}, createdAt: new Date() },
+        { id: 'turn-3', sessionId: 'session-1', speaker: Speaker.INTERVIEWER, content: 'next question', metadata: {}, createdAt: new Date() }
+      ]
+    };
+    const prisma = {
+      interviewSession: {
+        findUnique: vi.fn().mockResolvedValueOnce(session).mockResolvedValueOnce(updatedSession)
+      },
+      interviewTurn: {
+        create: vi.fn().mockReturnValueOnce({ id: 'turn-2' }).mockReturnValueOnce({ id: 'turn-3' })
+      },
+      $transaction: vi.fn().mockResolvedValue([{ id: 'turn-2' }, { id: 'turn-3' }])
+    };
+    const ai = {
+      run: vi.fn().mockResolvedValue('next question')
+    };
+    const service = new InterviewsService(prisma as never, ai as never);
+
+    await expect(service.addTurn('user-1', UserRole.USER, 'session-1', 'candidate answer')).resolves.toEqual(updatedSession);
+
+    expect(ai.run).toHaveBeenCalledWith(expect.objectContaining({ input: expect.stringContaining('candidate answer') }));
+    expect(prisma.interviewTurn.create).toHaveBeenNthCalledWith(1, {
+      data: { sessionId: 'session-1', speaker: Speaker.CANDIDATE, content: 'candidate answer' }
+    });
+    expect(prisma.interviewTurn.create).toHaveBeenNthCalledWith(2, {
+      data: { sessionId: 'session-1', speaker: Speaker.INTERVIEWER, content: 'next question' }
+    });
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
+  });
+
   it('rejects AI assessment JSON with invalid score schema', async () => {
     const session = buildSession();
     const prisma = {

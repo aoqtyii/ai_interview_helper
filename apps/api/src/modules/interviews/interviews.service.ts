@@ -65,10 +65,6 @@ export class InterviewsService {
     const session = await this.get(userId, role, sessionId);
     if (session.status !== InterviewStatus.IN_PROGRESS) throw new ForbiddenException('Session is not in progress');
 
-    await this.prisma.interviewTurn.create({
-      data: { sessionId, speaker: Speaker.CANDIDATE, content }
-    });
-
     const transcript = [...session.turns, { speaker: Speaker.CANDIDATE, content }]
       .map((turn) => `${turn.speaker}: ${turn.content}`)
       .join('\n');
@@ -80,9 +76,14 @@ export class InterviewsService {
       input: transcript
     });
 
-    await this.prisma.interviewTurn.create({
-      data: { sessionId, speaker: Speaker.INTERVIEWER, content: nextQuestion }
-    });
+    await this.prisma.$transaction([
+      this.prisma.interviewTurn.create({
+        data: { sessionId, speaker: Speaker.CANDIDATE, content }
+      }),
+      this.prisma.interviewTurn.create({
+        data: { sessionId, speaker: Speaker.INTERVIEWER, content: nextQuestion }
+      })
+    ]);
 
     return this.get(userId, role, sessionId);
   }

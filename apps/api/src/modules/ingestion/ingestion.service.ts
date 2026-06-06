@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { BadGatewayException, Inject, Injectable } from '@nestjs/common';
+import { BadGatewayException, Inject, Injectable, Logger } from '@nestjs/common';
 import { FeedType, RecordStatus } from '@prisma/client';
 import Parser from 'rss-parser';
 import { assertSafeHttpUrl } from '../../common/safe-url';
@@ -11,6 +11,7 @@ const MAX_FEED_BYTES = 1_000_000;
 
 @Injectable()
 export class IngestionService {
+  private readonly logger = new Logger(IngestionService.name);
   private readonly parser = new Parser();
 
   constructor(
@@ -22,7 +23,13 @@ export class IngestionService {
     const feeds = await this.prisma.sourceFeed.findMany({ where: { status: RecordStatus.ACTIVE } });
     const results = [];
     for (const feed of feeds) {
-      results.push(await this.runFeed(feed.id));
+      try {
+        results.push(await this.runFeed(feed.id));
+      } catch (error) {
+        const message = this.errorMessage(error);
+        this.logger.warn(`Feed ingestion failed for ${feed.id}: ${message}`);
+        results.push({ feedId: feed.id, created: 0, skipped: 0, failed: 1, error: message });
+      }
     }
     return results;
   }
@@ -30,13 +37,14 @@ export class IngestionService {
   async runFeed(feedId: string) {
     const feed = await this.prisma.sourceFeed.findUniqueOrThrow({ where: { id: feedId } });
     if (feed.type !== FeedType.RSS) {
-      return { feedId, created: 0, skipped: 0, note: 'Only RSS is implemented in MVP worker' };
+      return { feedId, created: 0, skipped: 0, failed: 0, note: 'Only RSS is implemented in MVP worker' };
     }
 
     const safeUrl = await assertSafeHttpUrl(feed.url);
     const parsed = await this.parser.parseString(await this.fetchFeedXml(safeUrl));
     let created = 0;
     let skipped = 0;
+    let failed = 0;
 
     for (const item of parsed.items.slice(0, 10)) {
       const url = item.link;
@@ -52,31 +60,36 @@ export class IngestionService {
         continue;
       }
 
-      const rawDigest = await this.ai.run({
-        taskType: 'article_digest',
-        system: '你是 AI 前沿资讯分析器。输出 JSON：summary、tags、relevanceScores。',
-        input: `标题：${item.title}\n链接：${url}\n内容：${item.contentSnippet ?? item.content ?? ''}`
-      });
-      const digest = this.parseDigest(rawDigest);
+      try {
+        const rawDigest = await this.ai.run({
+          taskType: 'article_digest',
+          system: '你是 AI 前沿资讯分析器。输出 JSON：summary、tags、relevanceScores。',
+          input: `标题：${item.title}\n链接：${url}\n内容：${item.contentSnippet ?? item.content ?? ''}`
+        });
+        const digest = this.parseDigest(rawDigest);
 
-      await this.prisma.intelligenceArticle.create({
-        data: {
-          sourceId: feed.id,
-          title: item.title,
-          url,
-          publishedAt: item.isoDate ? new Date(item.isoDate) : undefined,
-          rawHash,
-          digest: {
-            create: {
-              summary: digest.summary,
-              tags: digest.tags,
-              relevanceScores: digest.relevanceScores
+        await this.prisma.intelligenceArticle.create({
+          data: {
+            sourceId: feed.id,
+            title: item.title,
+            url,
+            publishedAt: item.isoDate ? new Date(item.isoDate) : undefined,
+            rawHash,
+            digest: {
+              create: {
+                summary: digest.summary,
+                tags: digest.tags,
+                relevanceScores: digest.relevanceScores
+              }
             }
           }
-        }
-      });
+        });
 
-      created += 1;
+        created += 1;
+      } catch (error) {
+        failed += 1;
+        this.logger.warn(`Article ingestion failed for ${url}: ${this.errorMessage(error)}`);
+      }
     }
 
     await this.prisma.sourceFeed.update({
@@ -84,7 +97,7 @@ export class IngestionService {
       data: { lastCrawledAt: new Date() }
     });
 
-    return { feedId, created, skipped };
+    return { feedId, created, skipped, failed };
   }
 
   private parseDigest(raw: string) {
@@ -137,5 +150,9 @@ export class IngestionService {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : 'Unknown error';
   }
 }
