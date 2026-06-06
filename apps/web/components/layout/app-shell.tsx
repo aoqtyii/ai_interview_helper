@@ -2,19 +2,41 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { BarChart3, BookOpen, BrainCircuit, Newspaper, Shield, Terminal } from 'lucide-react';
 import { clsx } from 'clsx';
+import { api } from '@/lib/api';
+import type { CurrentUser } from '@/lib/types';
 
 const nav = [
   { href: '/dashboard', label: '工作台', icon: BarChart3 },
   { href: '/interviews', label: '模拟面试', icon: BrainCircuit },
   { href: '/learning', label: '学习补弱', icon: BookOpen },
   { href: '/intelligence', label: '前沿情报', icon: Newspaper },
-  { href: '/admin', label: '管理台', icon: Shield }
+  { href: '/admin', label: '管理台', icon: Shield, adminOnly: true }
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    api<CurrentUser>('/auth/me')
+      .then((user) => {
+        if (!cancelled) setCurrentUser(user);
+      })
+      .catch(() => {
+        if (!cancelled) setCurrentUser(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const visibleNav = nav.filter((item) => !item.adminOnly || currentUser?.role === 'ADMIN');
 
   return (
     <main className="min-h-screen grid-mask">
@@ -29,8 +51,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        <nav className="space-y-2">
-          {nav.map((item) => {
+        <nav className="space-y-2" aria-label="主导航">
+          {visibleNav.map((item) => {
             const Icon = item.icon;
             const active = pathname.startsWith(item.href);
             return (

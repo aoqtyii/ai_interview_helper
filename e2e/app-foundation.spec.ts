@@ -17,6 +17,8 @@ test('seeded user can log in and reach the dashboard', async ({ page }) => {
 
 test('ordinary users cannot use the admin page', async ({ page }) => {
   await login(page, 'user@aih.local', 'user123456');
+  await expect(page.getByRole('link', { name: '管理台' })).toHaveCount(0);
+
   await page.goto('/admin');
 
   await expect(page.locator('main')).toContainText('403');
