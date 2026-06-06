@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { BadGatewayException, Inject, Injectable } from '@nestjs/common';
 import { FeedType, RecordStatus } from '@prisma/client';
 import Parser from 'rss-parser';
 import { assertSafeHttpUrl } from '../../common/safe-url';
@@ -14,8 +14,8 @@ export class IngestionService {
   private readonly parser = new Parser();
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly ai: AiGatewayService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(AiGatewayService) private readonly ai: AiGatewayService
   ) {}
 
   async runAll() {
@@ -52,16 +52,6 @@ export class IngestionService {
         continue;
       }
 
-      const article = await this.prisma.intelligenceArticle.create({
-        data: {
-          sourceId: feed.id,
-          title: item.title,
-          url,
-          publishedAt: item.isoDate ? new Date(item.isoDate) : undefined,
-          rawHash
-        }
-      });
-
       const rawDigest = await this.ai.run({
         taskType: 'article_digest',
         system: '你是 AI 前沿资讯分析器。输出 JSON：summary、tags、relevanceScores。',
@@ -69,12 +59,20 @@ export class IngestionService {
       });
       const digest = this.parseDigest(rawDigest);
 
-      await this.prisma.articleDigest.create({
+      await this.prisma.intelligenceArticle.create({
         data: {
-          articleId: article.id,
-          summary: digest.summary,
-          tags: digest.tags,
-          relevanceScores: digest.relevanceScores
+          sourceId: feed.id,
+          title: item.title,
+          url,
+          publishedAt: item.isoDate ? new Date(item.isoDate) : undefined,
+          rawHash,
+          digest: {
+            create: {
+              summary: digest.summary,
+              tags: digest.tags,
+              relevanceScores: digest.relevanceScores
+            }
+          }
         }
       });
 
@@ -90,15 +88,30 @@ export class IngestionService {
   }
 
   private parseDigest(raw: string) {
+    let parsed: unknown;
+
     try {
-      return JSON.parse(raw) as { summary: string; tags: string[]; relevanceScores: Record<string, number> };
+      parsed = JSON.parse(raw);
     } catch {
-      return {
-        summary: raw.slice(0, 500),
-        tags: ['AI'],
-        relevanceScores: { aiProductManager: 60, aiAgentDeveloper: 60, fde: 60 }
-      };
+      throw new BadGatewayException('AI article digest is not valid JSON');
     }
+
+    if (!this.isValidDigest(parsed)) {
+      throw new BadGatewayException('AI article digest schema is invalid');
+    }
+
+    return parsed;
+  }
+
+  private isValidDigest(value: unknown): value is { summary: string; tags: string[]; relevanceScores: Record<string, number> } {
+    if (!value || typeof value !== 'object') return false;
+    const digest = value as Record<string, unknown>;
+    if (typeof digest.summary !== 'string' || !digest.summary.trim()) return false;
+    if (!Array.isArray(digest.tags) || !digest.tags.length) return false;
+    if (!digest.tags.every((tag) => typeof tag === 'string' && Boolean(tag.trim()))) return false;
+    if (!digest.relevanceScores || typeof digest.relevanceScores !== 'object' || Array.isArray(digest.relevanceScores)) return false;
+    const scores = Object.entries(digest.relevanceScores);
+    return scores.length > 0 && scores.every(([key, score]) => Boolean(key.trim()) && typeof score === 'number' && Number.isFinite(score));
   }
 
   private async fetchFeedXml(url: string) {

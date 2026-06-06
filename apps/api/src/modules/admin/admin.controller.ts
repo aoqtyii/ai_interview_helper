@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Post } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { assertSafeHttpUrl } from '../../common/safe-url';
 import { Roles } from '../../common/roles.decorator';
@@ -10,8 +10,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 @Controller('admin')
 export class AdminController {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly ingestion: IngestionService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(IngestionService) private readonly ingestion: IngestionService
   ) {}
 
   @Post('role-profiles')
