@@ -16,17 +16,6 @@ export class InterviewsService {
       include: { skills: true }
     });
 
-    const session = await this.prisma.interviewSession.create({
-      data: {
-        userId,
-        roleProfileId: role.id,
-        difficulty: input.difficulty ?? Difficulty.MID,
-        topic: input.topic,
-        status: InterviewStatus.IN_PROGRESS,
-        startedAt: new Date()
-      }
-    });
-
     const firstQuestion = await this.ai.run({
       taskType: 'interviewer_turn',
       userId,
@@ -34,11 +23,20 @@ export class InterviewsService {
       input: `岗位：${role.name}\n主题：${input.topic ?? '综合能力'}\n技能：${role.skills.map((skill) => skill.name).join('、')}`
     });
 
-    await this.prisma.interviewTurn.create({
+    const session = await this.prisma.interviewSession.create({
       data: {
-        sessionId: session.id,
-        speaker: Speaker.INTERVIEWER,
-        content: firstQuestion
+        userId,
+        roleProfileId: role.id,
+        difficulty: input.difficulty ?? Difficulty.MID,
+        topic: input.topic,
+        status: InterviewStatus.IN_PROGRESS,
+        startedAt: new Date(),
+        turns: {
+          create: {
+            speaker: Speaker.INTERVIEWER,
+            content: firstQuestion
+          }
+        }
       }
     });
 

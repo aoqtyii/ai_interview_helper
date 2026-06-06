@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Res } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { CurrentUser, AuthUser } from '../../common/current-user.decorator';
 import { Public } from '../../common/public.decorator';
@@ -7,7 +7,7 @@ import { AuthService } from './auth.service';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(@Inject(AuthService) private readonly auth: AuthService) {}
 
   @Public()
   @Post('login')

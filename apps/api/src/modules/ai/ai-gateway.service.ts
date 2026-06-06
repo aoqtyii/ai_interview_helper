@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadGatewayException, Inject, Injectable } from '@nestjs/common';
 import { AiRunStatus } from '@prisma/client';
 import { loadAppConfig } from '../../common/app-config';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -15,7 +15,7 @@ type AiRequest = {
 
 @Injectable()
 export class AiGatewayService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async run(request: AiRequest) {
     const started = Date.now();
@@ -32,7 +32,7 @@ export class AiGatewayService {
     if (!process.env.AI_API_KEY) {
       const message = 'AI_API_KEY is required when AI_MOCK_MODE is disabled';
       await this.logRun(request, provider, model, Date.now() - started, AiRunStatus.FAILED, undefined, message);
-      throw new Error(message);
+      throw new BadGatewayException(message);
     }
 
     try {
@@ -40,8 +40,9 @@ export class AiGatewayService {
       await this.logRun(request, provider, model, Date.now() - started, AiRunStatus.SUCCESS, output);
       return output;
     } catch (error) {
-      await this.logRun(request, provider, model, Date.now() - started, AiRunStatus.FAILED, undefined, String(error));
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      await this.logRun(request, provider, model, Date.now() - started, AiRunStatus.FAILED, undefined, message);
+      throw error instanceof BadGatewayException ? error : new BadGatewayException(message);
     }
   }
 

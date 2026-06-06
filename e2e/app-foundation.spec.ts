@@ -30,6 +30,18 @@ test('interview page loads for authenticated users', async ({ page }) => {
   await expect(page.locator('button').first()).toBeVisible();
 });
 
+test('interview creation failures are visible to users', async ({ page }) => {
+  await login(page, 'user@aih.local', 'user123456');
+  await page.goto('/interviews');
+
+  const responsePromise = page.waitForResponse((response) => response.url().endsWith('/interviews/sessions') && response.request().method() === 'POST');
+  await page.locator('button').first().click();
+  const response = await responsePromise;
+
+  expect(response.status()).toBe(502);
+  await expect(page.locator('.text-red-100').first()).toBeVisible();
+});
+
 test('admin page surfaces API failures instead of hiding them', async ({ page }) => {
   await login(page, 'admin@aih.local', 'admin123456');
   await page.route('**/admin/ai-run-logs', async (route) => {

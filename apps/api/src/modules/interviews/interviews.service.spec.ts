@@ -1,8 +1,32 @@
+import { BadGatewayException } from '@nestjs/common';
 import { Difficulty, InterviewStatus, Speaker, UserRole } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 import { InterviewsService } from './interviews.service';
 
 describe('InterviewsService', () => {
+  it('does not create a session when the opening AI question fails', async () => {
+    const prisma = {
+      roleProfile: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({ id: 'role-1', name: 'AI Agent Developer', skills: [] })
+      },
+      interviewSession: {
+        create: vi.fn()
+      },
+      interviewTurn: {
+        create: vi.fn()
+      }
+    };
+    const ai = {
+      run: vi.fn().mockRejectedValue(new BadGatewayException('AI_API_KEY is required'))
+    };
+    const service = new InterviewsService(prisma as never, ai as never);
+
+    await expect(service.create('user-1', { roleProfileId: 'role-1', difficulty: Difficulty.MID })).rejects.toThrow('AI_API_KEY is required');
+
+    expect(prisma.interviewSession.create).not.toHaveBeenCalled();
+    expect(prisma.interviewTurn.create).not.toHaveBeenCalled();
+  });
+
   it('finishes a session idempotently using one improvement plan per report', async () => {
     const session = buildSession();
     const completedSession = { ...session, status: InterviewStatus.COMPLETED };
