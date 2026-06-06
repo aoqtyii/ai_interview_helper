@@ -6,7 +6,7 @@ import { AppShell } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Panel } from '@/components/ui/panel';
 import { api, ApiError } from '@/lib/api';
-import type { AiRunLog } from '@/lib/types';
+import type { AiRunLog, CurrentUser } from '@/lib/types';
 
 export default function AdminPage() {
   const [logs, setLogs] = useState<AiRunLog[]>([]);
@@ -16,13 +16,32 @@ export default function AdminPage() {
   const [running, setRunning] = useState(false);
 
   useEffect(() => {
-    api<AiRunLog[]>('/admin/ai-run-logs')
-      .then((nextLogs) => {
+    let cancelled = false;
+
+    async function loadAdminData() {
+      try {
+        const user = await api<CurrentUser>('/auth/me');
+        if (user.role !== 'ADMIN') {
+          if (!cancelled) setError('当前账号没有管理员权限。');
+          return;
+        }
+
+        const nextLogs = await api<AiRunLog[]>('/admin/ai-run-logs');
+        if (cancelled) return;
         setLogs(nextLogs);
         setError('');
-      })
-      .catch((nextError) => setError(formatAdminError(nextError)))
-      .finally(() => setLoading(false));
+      } catch (nextError) {
+        if (!cancelled) setError(formatAdminError(nextError));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadAdminData();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function runIngestion() {
@@ -39,6 +58,12 @@ export default function AdminPage() {
 
   return (
     <AppShell>
+      {error === '当前账号没有管理员权限。' ? (
+        <Panel className="border-red-400/40 bg-red-950/20">
+          <h2 className="text-lg font-semibold text-red-100">403</h2>
+          <p className="mt-2 text-sm text-red-100/75">{error}</p>
+        </Panel>
+      ) : (
       <div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
         <Panel>
           <h2 className="text-lg font-semibold">运营控制台</h2>
@@ -97,6 +122,7 @@ export default function AdminPage() {
           </div>
         </Panel>
       </div>
+      )}
     </AppShell>
   );
 }

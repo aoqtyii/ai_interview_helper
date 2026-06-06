@@ -5,6 +5,13 @@ export type RoleProfile = {
   skills?: { id: string; name: string; category: string; description: string }[];
 };
 
+export type CurrentUser = {
+  id: string;
+  email: string;
+  name: string;
+  role: 'ADMIN' | 'USER';
+};
+
 export type InterviewSession = {
   id: string;
   status: string;

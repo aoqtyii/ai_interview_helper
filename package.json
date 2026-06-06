@@ -18,6 +18,7 @@
     "lint": "eslint .",
     "lint:web": "npm --workspace @aih/web run lint",
     "lint:api": "npm --workspace @aih/api run lint",
+    "e2e": "playwright test",
     "test": "npm-run-all test:*",
     "test:web": "npm --workspace @aih/web run test",
     "test:api": "npm --workspace @aih/api run test",
@@ -33,6 +34,7 @@
   "devDependencies": {
     "@eslint/js": "^9.17.0",
     "@next/eslint-plugin-next": "^16.2.6",
+    "@playwright/test": "^1.60.0",
     "@types/node": "^22.10.2",
     "@typescript-eslint/eslint-plugin": "^8.18.2",
     "@typescript-eslint/parser": "^8.18.2",
