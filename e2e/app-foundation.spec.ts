@@ -20,6 +20,7 @@ test('ordinary users cannot use the admin page', async ({ page }) => {
   await page.goto('/admin');
 
   await expect(page.locator('main')).toContainText('403');
+  await expect(page.locator('main')).toContainText('当前账号没有管理员权限。');
 });
 
 test('interview page loads for authenticated users', async ({ page }) => {
