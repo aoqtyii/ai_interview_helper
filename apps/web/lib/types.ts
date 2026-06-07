@@ -72,10 +72,27 @@ export type ImprovementPlanItem = {
 
 export type LearningItem = {
   id: string;
+  type: 'ARTICLE' | 'DOCUMENT' | 'TASK' | 'EXERCISE' | 'PROJECT' | 'VIDEO' | 'INTERVIEW_REVIEW';
   title: string;
   description?: string;
+  contentUrl?: string | null;
+  difficulty?: Difficulty;
+  tags?: string[];
+  dimensionKeys?: string[];
+  status?: 'ACTIVE' | 'ARCHIVED' | 'DRAFT';
   estimatedMinutes: number;
-  skill?: { name: string };
+  roleProfile?: { id: string; name: string } | null;
+  skill?: { id?: string; name: string; roleProfileId?: string } | null;
+  progress?: LearningProgress[];
+};
+
+export type LearningProgress = {
+  id: string;
+  status: 'TODO' | 'IN_PROGRESS' | 'DONE';
+  score?: number | null;
+  completedAt?: string | null;
+  note?: string;
+  reflection?: string;
 };
 
 export type Article = {

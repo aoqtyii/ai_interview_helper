@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { AppShell } from '@/components/layout/app-shell';
 import { Panel } from '@/components/ui/panel';
 import { StatCard } from '@/components/dashboard/stat-card';
@@ -9,12 +10,12 @@ export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
   let sessions: InterviewSession[];
-  let learning: LearningItem[];
+  let pendingLearning: LearningItem[];
   let articles: Article[];
   try {
-    [sessions, learning, articles] = await Promise.all([
+    [sessions, pendingLearning, articles] = await Promise.all([
       serverApi<InterviewSession[]>('/interviews/sessions'),
-      serverApi<LearningItem[]>('/learning/recommendations'),
+      serverApi<LearningItem[]>('/learning/pending'),
       serverApi<Article[]>('/intelligence/articles')
     ]);
   } catch (error) {
@@ -29,30 +30,31 @@ export default async function DashboardPage() {
     <AppShell>
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard label="最近面试" value={`${sessions.length}`} hint="可回放并生成评分报告" />
-        <StatCard label="补弱任务" value={`${learning.length}`} hint="按目标岗位能力图谱推荐" />
+        <StatCard label="待完成补弱" value={`${pendingLearning.length}`} hint="来自学习资源和报告建议" />
         <StatCard label="前沿资讯" value={`${articles.length}`} hint="RSS/API 聚合与 AI 摘要" />
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
-        {!sessions.length && !learning.length && !articles.length && (
+        {!sessions.length && !pendingLearning.length && !articles.length && (
           <div className="lg:col-span-2">
-            <EmptyState title="暂无工作台数据" description="完成一次面试或配置学习内容后，这里会显示真实进展。" />
+            <EmptyState title="暂无工作台数据" description="完成一次面试、配置学习资源或抓取资讯后，这里会显示真实进展。" />
           </div>
         )}
+
         <Panel>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold">面试能力雷达</h2>
-            <span className="rounded-md bg-acid/10 px-2 py-1 text-xs text-acid">Mock Ready</span>
+            <span className="rounded-md bg-acid/10 px-2 py-1 text-xs text-acid">报告驱动</span>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
-            {['AI 应用深度', '结构化表达', '指标意识', '工程落地'].map((item, index) => (
-              <div key={item} className="rounded-md border border-line bg-black/20 p-4">
-                <div className="flex justify-between text-sm">
-                  <span>{item}</span>
-                  <span className="text-cyan">{82 - index * 4}%</span>
+            {latestDimensions(sessions).map((item) => (
+              <div key={item.name} className="rounded-md border border-line bg-black/20 p-4">
+                <div className="flex justify-between gap-3 text-sm">
+                  <span>{item.name}</span>
+                  <span className="text-cyan">{item.score}%</span>
                 </div>
                 <div className="mt-3 h-2 rounded-full bg-white/10">
-                  <div className="h-2 rounded-full bg-cyan" style={{ width: `${82 - index * 4}%` }} />
+                  <div className="h-2 rounded-full bg-cyan" style={{ width: `${item.score}%` }} />
                 </div>
               </div>
             ))}
@@ -60,17 +62,45 @@ export default async function DashboardPage() {
         </Panel>
 
         <Panel>
-          <h2 className="mb-4 text-lg font-semibold">下一步行动</h2>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold">下一步行动</h2>
+            <Link href="/learning" className="text-sm text-cyan hover:text-acid">
+              查看全部
+            </Link>
+          </div>
           <div className="space-y-3">
-            {learning.slice(0, 3).map((item) => (
-              <div key={item.id} className="rounded-md border border-line bg-white/[0.03] p-3">
-                <div className="text-sm font-medium">{item.title}</div>
-                <div className="mt-1 text-xs text-slate-400">{item.estimatedMinutes} 分钟</div>
+            {pendingLearning.length ? (
+              pendingLearning.slice(0, 4).map((item) => (
+                <div key={item.id} className="rounded-md border border-line bg-white/[0.03] p-3">
+                  <div className="text-sm font-medium">{item.title}</div>
+                  <div className="mt-1 text-xs text-slate-400">
+                    {item.estimatedMinutes} 分钟{item.roleProfile?.name ? ` / ${item.roleProfile.name}` : ''}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-md border border-dashed border-line bg-white/[0.02] p-4 text-sm text-slate-400">
+                暂无待完成补弱任务。
               </div>
-            ))}
+            )}
           </div>
         </Panel>
       </div>
     </AppShell>
   );
+}
+
+function latestDimensions(sessions: InterviewSession[]) {
+  const report = sessions.find((session) => session.report)?.report;
+  const rows = report?.dimensionScoreRows ?? [];
+  if (rows.length) {
+    return rows.slice(0, 4).map((row) => ({ name: row.dimensionName, score: Math.max(0, Math.min(100, row.score)) }));
+  }
+
+  return [
+    { name: 'AI / LLM 基础理解', score: 0 },
+    { name: 'Agent / RAG 技术深度', score: 0 },
+    { name: '系统架构与工程实现', score: 0 },
+    { name: '评估指标与风险控制', score: 0 }
+  ];
 }

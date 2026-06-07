@@ -49,9 +49,12 @@ enum Difficulty {
 
 enum LearningType {
   ARTICLE
+  DOCUMENT
   TASK
   EXERCISE
   PROJECT
+  VIDEO
+  INTERVIEW_REVIEW
 }
 
 enum ProgressStatus {
@@ -115,6 +118,7 @@ model RoleProfile {
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
   skills            Skill[]
+  learningItems     LearningItem[]
   userProfiles      UserProfile[]
   questions         InterviewQuestion[]
   interviewSessions InterviewSession[]
@@ -265,16 +269,31 @@ model ImprovementPlanItem {
 
 model LearningItem {
   id                   String                 @id @default(cuid())
+  roleProfileId        String?
   skillId              String?
   type                 LearningType
   title                String
   description          String
   contentUrl           String?
+  difficulty           Difficulty             @default(MID)
+  tags                 String[]               @default([])
+  dimensionKeys        String[]               @default([])
+  status               RecordStatus           @default(ACTIVE)
+  sourceType           String                 @default("MANUAL")
+  sourceMetadata       Json                   @default("{}")
   estimatedMinutes     Int                    @default(20)
   embedding            Unsupported("vector")?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  roleProfile          RoleProfile?           @relation(fields: [roleProfileId], references: [id], onDelete: SetNull)
   skill                Skill?                 @relation(fields: [skillId], references: [id])
   progress             LearningProgress[]
   improvementPlanItems ImprovementPlanItem[]
+
+  @@index([roleProfileId])
+  @@index([skillId])
+  @@index([status])
+  @@index([difficulty])
 }
 
 model LearningProgress {
@@ -283,6 +302,9 @@ model LearningProgress {
   learningItemId String
   status         ProgressStatus @default(TODO)
   score          Int?
+  completedAt    DateTime?
+  note           String         @default("")
+  reflection     String         @default("")
   updatedAt      DateTime       @updatedAt
   user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   learningItem   LearningItem   @relation(fields: [learningItemId], references: [id], onDelete: Cascade)

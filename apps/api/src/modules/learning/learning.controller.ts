@@ -7,9 +7,19 @@ import { LearningService } from './learning.service';
 export class LearningController {
   constructor(@Inject(LearningService) private readonly learning: LearningService) {}
 
+  @Get('items')
+  items(@CurrentUser() user: AuthUser) {
+    return this.learning.items(user.id);
+  }
+
   @Get('recommendations')
   recommendations(@CurrentUser() user: AuthUser) {
     return this.learning.recommendations(user.id);
+  }
+
+  @Get('pending')
+  pending(@CurrentUser() user: AuthUser) {
+    return this.learning.pending(user.id);
   }
 
   @Post('progress')

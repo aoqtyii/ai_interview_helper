@@ -16,4 +16,14 @@ export class UpdateLearningProgressDto {
   @Min(0)
   @Max(100)
   score?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  note?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  reflection?: string;
 }

@@ -30,7 +30,7 @@ test('interview page loads for authenticated users', async ({ page }) => {
   await page.goto('/interviews');
 
   await expect(page.locator('main')).toBeVisible();
-  await expect(page.locator('button').first()).toBeVisible();
+  await expect(page.getByRole('button', { name: '开始面试' })).toBeVisible();
 });
 
 test('interview creation failures are visible to users', async ({ page }) => {
@@ -43,6 +43,14 @@ test('interview creation failures are visible to users', async ({ page }) => {
 
   expect(response.status()).toBe(502);
   await expect(page.locator('.text-red-100').first()).toBeVisible();
+});
+
+test('learning page lists seeded resources for authenticated users', async ({ page }) => {
+  await login(page, 'user@aih.local', 'user123456');
+  await page.goto('/learning');
+
+  await expect(page.locator('main')).toContainText('学习资源');
+  await expect(page.locator('main')).toContainText('未开始');
 });
 
 test('admin page surfaces API failures instead of hiding them', async ({ page }) => {

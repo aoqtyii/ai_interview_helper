@@ -49,6 +49,9 @@ describe('InterviewsService', () => {
       improvementPlan: {
         upsert: vi.fn().mockResolvedValue({ id: 'plan-1' })
       },
+      learningItem: {
+        findFirst: vi.fn().mockResolvedValue({ id: 'learning-1' })
+      },
       improvementPlanItem: {
         deleteMany: vi.fn(),
         createMany: vi.fn()
@@ -79,7 +82,7 @@ describe('InterviewsService', () => {
     expect(prisma.assessmentFinding.createMany).toHaveBeenCalledOnce();
     expect(prisma.improvementPlanItem.createMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.arrayContaining([expect.objectContaining({ planId: 'plan-1', dimensionKey: 'evaluation_metrics_risk' })])
+        data: expect.arrayContaining([expect.objectContaining({ planId: 'plan-1', dimensionKey: 'evaluation_metrics_risk', learningItemId: 'learning-1' })])
       })
     );
   });

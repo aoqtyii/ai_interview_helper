@@ -352,6 +352,11 @@ function ReportPanel({ session }: { session: InterviewSession }) {
                   {item.learningItem.title}
                 </div>
               )}
+              {!item.learningItem && (
+                <div className="mt-2 rounded-md border border-dashed border-line px-2 py-1 text-xs text-slate-500">
+                  暂无匹配资源，仅展示文字练习任务。
+                </div>
+              )}
             </div>
           ))}
         </div>

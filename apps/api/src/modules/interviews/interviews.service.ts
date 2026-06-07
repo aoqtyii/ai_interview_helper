@@ -1,5 +1,5 @@
 import { BadGatewayException, BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { AssessmentFindingType, Difficulty, InterviewStatus, Speaker, UserRole } from '@prisma/client';
+import { AssessmentFindingType, Difficulty, InterviewStatus, RecordStatus, Speaker, UserRole } from '@prisma/client';
 import { AiGatewayService } from '../ai/ai-gateway.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -166,6 +166,7 @@ export class InterviewsService {
       input: `岗位：${session.roleProfile.name}\n难度：${session.difficulty}\n主题：${session.topic ?? '综合能力'}\n\n请输出 JSON，字段：overallScore(number), dimensionScores([{dimensionKey,dimensionName,score,rationale}]), summary(string), strengths([{dimensionKey,content}]), weaknesses([{dimensionKey,content}]), improvementPlan([{dimensionKey,title,weakness,practiceMethod,priority,estimatedMinutes,skillId?,learningItemId?}]), nextPractice(string)。首版不要填写 skillId 和 learningItemId，课程资源关联由系统后续匹配。\n\n转写：\n${transcript}`
     });
     const parsed = this.parseReport(rawReport);
+    const matchedLearningItems = await this.matchLearningItems(session.roleProfileId, parsed.improvementPlan);
 
     await this.prisma.$transaction(async (tx) => {
       const report = await tx.assessmentReport.upsert({
@@ -236,14 +237,15 @@ export class InterviewsService {
 
       await tx.improvementPlanItem.deleteMany({ where: { planId: plan.id } });
       await tx.improvementPlanItem.createMany({
-        data: parsed.improvementPlan.map((item) => ({
+        data: parsed.improvementPlan.map((item, index) => ({
           planId: plan.id,
           dimensionKey: item.dimensionKey,
           title: item.title,
           weakness: item.weakness,
           practiceMethod: item.practiceMethod,
           priority: item.priority,
-          estimatedMinutes: item.estimatedMinutes
+          estimatedMinutes: item.estimatedMinutes,
+          learningItemId: matchedLearningItems.get(index)
         }))
       });
 
@@ -308,6 +310,26 @@ export class InterviewsService {
 
   private legacyRecommendations(report: AssessmentReportPayload) {
     return report.improvementPlan.map((item) => item.title);
+  }
+
+  private async matchLearningItems(roleProfileId: string, items: ImprovementPlanItemPayload[]) {
+    const matches = new Map<number, string>();
+
+    for (const [index, item] of items.entries()) {
+      const learningItem = await this.prisma.learningItem.findFirst({
+        where: {
+          status: RecordStatus.ACTIVE,
+          dimensionKeys: { has: item.dimensionKey },
+          OR: [{ roleProfileId }, { skill: { roleProfileId } }, { roleProfileId: null, skillId: null }]
+        },
+        orderBy: [{ estimatedMinutes: 'asc' }, { createdAt: 'desc' }],
+        select: { id: true }
+      });
+
+      if (learningItem) matches.set(index, learningItem.id);
+    }
+
+    return matches;
   }
 
   private isValidReport(value: unknown): value is AssessmentReportPayload {

@@ -1,5 +1,5 @@
 import { pbkdf2Sync, randomBytes } from 'node:crypto';
-import { PrismaClient, Difficulty, FeedType, LearningType, UserRole } from '@prisma/client';
+import { Difficulty, FeedType, LearningType, PrismaClient, RecordStatus, UserRole } from '@prisma/client';
 
 const prisma = new PrismaClient();
 const PASSWORD_ITERATIONS = 120_000;
@@ -21,40 +21,46 @@ async function main() {
     {
       role: aiPm,
       skills: [
-        ['需求发现', 'Product', '从业务目标、用户场景和工作流中识别 AI 机会。'],
-        ['AI 方案判断', 'AI', '判断 LLM、Agent、RAG、传统规则等方案的适用边界。'],
-        ['指标设计', 'Execution', '设计上线前后验证指标和实验方案。']
+        { id: 'ai-pm-discovery', name: '需求发现', category: 'Product', description: '从业务目标、用户场景和工作流中识别 AI 机会。', dimensionKey: 'business_product_decomposition' },
+        { id: 'ai-pm-solution', name: 'AI 方案判断', category: 'AI', description: '判断 LLM、Agent、RAG、传统规则等方案的适用边界。', dimensionKey: 'application_solution_design' },
+        { id: 'ai-pm-metrics', name: '指标设计', category: 'Execution', description: '设计上线前后验证指标和实验方案。', dimensionKey: 'evaluation_metrics_risk' }
       ]
     },
     {
       role: agentDev,
       skills: [
-        ['Agent 架构', 'Engineering', '规划 planner、tools、memory、guardrails 与 evaluator。'],
-        ['RAG 与检索', 'Engineering', '设计知识切分、向量检索、重排和引用策略。'],
-        ['评测与观测', 'Quality', '构建离线评测、线上日志和失败分析闭环。']
+        { id: 'agent-dev-architecture', name: 'Agent 架构', category: 'Engineering', description: '规划 planner、tools、memory、guardrails 与 evaluator。', dimensionKey: 'agent_rag_tooling_depth' },
+        { id: 'agent-dev-rag', name: 'RAG 与检索', category: 'Engineering', description: '设计知识切分、向量检索、重排和引用策略。', dimensionKey: 'agent_rag_tooling_depth' },
+        { id: 'agent-dev-eval', name: '评测与观测', category: 'Quality', description: '构建离线评测、线上日志和失败分析闭环。', dimensionKey: 'evaluation_metrics_risk' }
       ]
     },
     {
       role: fde,
       skills: [
-        ['客户问题拆解', 'Field', '把复杂客户问题拆成可交付的 AI 方案。'],
-        ['快速原型', 'Engineering', '用最小闭环验证价值、风险和集成路径。'],
-        ['上线协作', 'Execution', '处理权限、数据、部署、培训和变更管理。']
+        { id: 'fde-problem-framing', name: '客户问题拆解', category: 'Field', description: '把复杂客户问题拆成可交付的 AI 方案。', dimensionKey: 'business_product_decomposition' },
+        { id: 'fde-prototype', name: '快速原型', category: 'Engineering', description: '用最小闭环验证价值、风险和集成路径。', dimensionKey: 'system_architecture_engineering' },
+        { id: 'fde-rollout', name: '上线协作', category: 'Execution', description: '处理权限、数据、部署、培训和变更管理。', dimensionKey: 'structured_communication' }
       ]
     }
   ];
 
   for (const entry of roles) {
-    for (const [name, category, description] of entry.skills) {
+    for (const skillInput of entry.skills) {
       const skill = await prisma.skill.upsert({
-        where: { id: `${entry.role.slug}-${name}` },
-        update: {},
-        create: {
-          id: `${entry.role.slug}-${name}`,
+        where: { id: skillInput.id },
+        update: {
           roleProfileId: entry.role.id,
-          name,
-          category,
-          description,
+          name: skillInput.name,
+          category: skillInput.category,
+          description: skillInput.description,
+          level: Difficulty.MID
+        },
+        create: {
+          id: skillInput.id,
+          roleProfileId: entry.role.id,
+          name: skillInput.name,
+          category: skillInput.category,
+          description: skillInput.description,
           level: Difficulty.MID
         }
       });
@@ -65,7 +71,7 @@ async function main() {
           roleProfileId: entry.role.id,
           skillId: skill.id,
           difficulty: Difficulty.MID,
-          question: `请结合项目经历说明你如何体现「${name}」能力？`,
+          question: `请结合项目经历说明你如何体现「${skill.name}」能力？`,
           rubric: {
             dimensions: ['结构化表达', 'AI 应用深度', '指标意识', '落地判断'],
             passing: '能给出具体场景、方案取舍、指标和复盘。'
@@ -76,7 +82,7 @@ async function main() {
           roleProfileId: entry.role.id,
           skillId: skill.id,
           difficulty: Difficulty.MID,
-          question: `请结合项目经历说明你如何体现「${name}」能力？`,
+          question: `请结合项目经历说明你如何体现「${skill.name}」能力？`,
           rubric: {
             dimensions: ['结构化表达', 'AI 应用深度', '指标意识', '落地判断'],
             passing: '能给出具体场景、方案取舍、指标和复盘。'
@@ -86,20 +92,10 @@ async function main() {
 
       await prisma.learningItem.upsert({
         where: { id: `${skill.id}-learning-task` },
-        update: {
-          skillId: skill.id,
-          type: LearningType.TASK,
-          title: `${name}：30 分钟面试案例打磨`,
-          description: `围绕 ${description} 准备一个 STAR + 指标 + 风险取舍的中文回答。`,
-          estimatedMinutes: 30
-        },
+        update: buildLearningItem(entry.role.id, skill.id, skillInput),
         create: {
           id: `${skill.id}-learning-task`,
-          skillId: skill.id,
-          type: LearningType.TASK,
-          title: `${name}：30 分钟面试案例打磨`,
-          description: `围绕 ${description} 准备一个 STAR + 指标 + 风险取舍的中文回答。`,
-          estimatedMinutes: 30
+          ...buildLearningItem(entry.role.id, skill.id, skillInput)
         }
       });
     }
@@ -113,7 +109,7 @@ async function main() {
       name: 'AIH Admin',
       role: UserRole.ADMIN,
       passwordHash: hashPassword('admin123456'),
-      profile: { create: { targetRoleId: aiPm.id, level: Difficulty.SENIOR, goals: '维护面试题库与资讯来源' } }
+      profile: { create: { targetRoleId: aiPm.id, level: Difficulty.SENIOR, goals: '维护面试题库与资讯来源。' } }
     }
   });
 
@@ -125,7 +121,7 @@ async function main() {
       name: 'AI Candidate',
       role: UserRole.USER,
       passwordHash: hashPassword('user123456'),
-      profile: { create: { targetRoleId: agentDev.id, level: Difficulty.MID, goals: '准备 AI Agent 开发岗位面试' } }
+      profile: { create: { targetRoleId: agentDev.id, level: Difficulty.MID, goals: '准备 AI Agent 开发岗位面试。' } }
     }
   });
 
@@ -148,12 +144,37 @@ async function main() {
       content: '根据中文 AI 岗位面试转写，输出结构化评分 JSON。',
       schema: {
         overallScore: 'number',
-        dimensionScores: 'object',
+        dimensionScores: 'AssessmentDimensionScore[]',
         summary: 'string',
-        recommendations: 'string[]'
+        strengths: 'AssessmentFinding[]',
+        weaknesses: 'AssessmentFinding[]',
+        improvementPlan: 'ImprovementPlanItem[]',
+        nextPractice: 'string'
       }
     }
   });
+}
+
+function buildLearningItem(
+  roleProfileId: string,
+  skillId: string,
+  skill: { name: string; description: string; dimensionKey: string }
+) {
+  return {
+    roleProfileId,
+    skillId,
+    type: LearningType.TASK,
+    title: `${skill.name}: 30 分钟面试案例打磨`,
+    description: `围绕 ${skill.description} 准备一个 STAR + 指标 + 风险取舍的中文回答。`,
+    contentUrl: null,
+    difficulty: Difficulty.MID,
+    tags: ['面试表达', '补弱任务'],
+    dimensionKeys: [skill.dimensionKey],
+    status: RecordStatus.ACTIVE,
+    sourceType: 'MANUAL',
+    sourceMetadata: {},
+    estimatedMinutes: 30
+  };
 }
 
 async function upsertRole(name: string, slug: string, description: string) {
