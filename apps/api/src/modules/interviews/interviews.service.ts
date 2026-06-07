@@ -1,10 +1,55 @@
 import { BadGatewayException, BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { Difficulty, InterviewStatus, Speaker, UserRole } from '@prisma/client';
+import { AssessmentFindingType, Difficulty, InterviewStatus, Speaker, UserRole } from '@prisma/client';
 import { AiGatewayService } from '../ai/ai-gateway.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const MAX_CANDIDATE_ANSWERS = 5;
 const MIN_CANDIDATE_ANSWERS_FOR_REPORT = 2;
+const ASSESSMENT_SCHEMA_VERSION = 2;
+const ASSESSMENT_DIMENSIONS = [
+  { key: 'ai_llm_foundation', name: 'AI / LLM 基础理解' },
+  { key: 'agent_rag_tooling_depth', name: 'Agent / RAG / 工具调用技术深度' },
+  { key: 'system_architecture_engineering', name: '系统架构与工程实现能力' },
+  { key: 'application_solution_design', name: '应用方案设计能力' },
+  { key: 'business_product_decomposition', name: '业务 / 产品拆解能力' },
+  { key: 'evaluation_metrics_risk', name: '评估、指标与风险控制' },
+  { key: 'structured_communication', name: '表达结构与沟通能力' }
+] as const;
+
+type AssessmentDimensionKey = (typeof ASSESSMENT_DIMENSIONS)[number]['key'];
+
+type AssessmentDimensionScorePayload = {
+  dimensionKey: AssessmentDimensionKey;
+  dimensionName: string;
+  score: number;
+  rationale: string;
+};
+
+type AssessmentFindingPayload = {
+  dimensionKey: AssessmentDimensionKey;
+  content: string;
+};
+
+type ImprovementPlanItemPayload = {
+  dimensionKey: AssessmentDimensionKey;
+  title: string;
+  weakness: string;
+  practiceMethod: string;
+  priority: number;
+  estimatedMinutes: number;
+  skillId?: string;
+  learningItemId?: string;
+};
+
+type AssessmentReportPayload = {
+  overallScore: number;
+  dimensionScores: AssessmentDimensionScorePayload[];
+  summary: string;
+  strengths: AssessmentFindingPayload[];
+  weaknesses: AssessmentFindingPayload[];
+  improvementPlan: ImprovementPlanItemPayload[];
+  nextPractice: string;
+};
 
 @Injectable()
 export class InterviewsService {
@@ -22,7 +67,7 @@ export class InterviewsService {
     const firstQuestion = await this.ai.run({
       taskType: 'interviewer_turn',
       userId,
-      system: '你是一个严格但支持性的 AI 岗位中文面试官。问题要贴近真实 AI 应用层岗位。',
+      system: '你是一名严格但支持性的 AI 岗位中文面试官。问题要贴近真实 AI 应用层岗位。',
       input: `岗位：${role.name}\n主题：${input.topic ?? '综合能力'}\n技能：${role.skills.map((skill) => skill.name).join('、')}`
     });
 
@@ -49,7 +94,7 @@ export class InterviewsService {
   list(userId: string, role: UserRole) {
     return this.prisma.interviewSession.findMany({
       where: role === UserRole.ADMIN ? undefined : { userId },
-      include: { roleProfile: true, report: true, turns: { take: 1, orderBy: { createdAt: 'desc' } } },
+      include: { roleProfile: true, report: this.reportInclude(), turns: { take: 1, orderBy: { createdAt: 'desc' } } },
       orderBy: { createdAt: 'desc' }
     });
   }
@@ -57,7 +102,7 @@ export class InterviewsService {
   async get(userId: string, role: UserRole, sessionId: string) {
     const session = await this.prisma.interviewSession.findUnique({
       where: { id: sessionId },
-      include: { roleProfile: { include: { skills: true } }, turns: { orderBy: { createdAt: 'asc' } }, report: true }
+      include: { roleProfile: { include: { skills: true } }, turns: { orderBy: { createdAt: 'asc' } }, report: this.reportInclude() }
     });
     if (!session) throw new NotFoundException('Interview session not found');
     if (role !== UserRole.ADMIN && session.userId !== userId) throw new ForbiddenException('Cannot access this session');
@@ -116,44 +161,96 @@ export class InterviewsService {
     const rawReport = await this.ai.run({
       taskType: 'assessment_report',
       userId,
-      system: '你是 AI 岗位面试评分官。必须输出 JSON，字段包括 overallScore、dimensionScores、summary、recommendations。',
-      input: transcript
+      system:
+        '你是 AI 岗位面试评分官。必须只输出 JSON。评分维度固定为：AI / LLM 基础理解、Agent / RAG / 工具调用技术深度、系统架构与工程实现能力、应用方案设计能力、业务 / 产品拆解能力、评估、指标与风险控制、表达结构与沟通能力。根据目标岗位差异调整评语侧重点，但不要改变 schema。',
+      input: `岗位：${session.roleProfile.name}\n难度：${session.difficulty}\n主题：${session.topic ?? '综合能力'}\n\n请输出 JSON，字段：overallScore(number), dimensionScores([{dimensionKey,dimensionName,score,rationale}]), summary(string), strengths([{dimensionKey,content}]), weaknesses([{dimensionKey,content}]), improvementPlan([{dimensionKey,title,weakness,practiceMethod,priority,estimatedMinutes,skillId?,learningItemId?}]), nextPractice(string)。首版不要填写 skillId 和 learningItemId，课程资源关联由系统后续匹配。\n\n转写：\n${transcript}`
     });
     const parsed = this.parseReport(rawReport);
 
-    const report = await this.prisma.assessmentReport.upsert({
-      where: { sessionId },
-      create: {
-        sessionId,
-        overallScore: parsed.overallScore,
-        dimensionScores: parsed.dimensionScores,
-        summary: parsed.summary,
-        recommendations: parsed.recommendations
-      },
-      update: {
-        overallScore: parsed.overallScore,
-        dimensionScores: parsed.dimensionScores,
-        summary: parsed.summary,
-        recommendations: parsed.recommendations
-      }
-    });
+    await this.prisma.$transaction(async (tx) => {
+      const report = await tx.assessmentReport.upsert({
+        where: { sessionId },
+        create: {
+          sessionId,
+          overallScore: parsed.overallScore,
+          dimensionScores: this.legacyDimensionScores(parsed),
+          summary: parsed.summary,
+          recommendations: this.legacyRecommendations(parsed),
+          schemaVersion: ASSESSMENT_SCHEMA_VERSION,
+          nextPractice: parsed.nextPractice
+        },
+        update: {
+          overallScore: parsed.overallScore,
+          dimensionScores: this.legacyDimensionScores(parsed),
+          summary: parsed.summary,
+          recommendations: this.legacyRecommendations(parsed),
+          schemaVersion: ASSESSMENT_SCHEMA_VERSION,
+          nextPractice: parsed.nextPractice
+        }
+      });
 
-    await this.prisma.improvementPlan.upsert({
-      where: { reportId: report.id },
-      create: {
-        userId: session.userId,
-        reportId: report.id,
-        items: this.buildImprovementItems(parsed.recommendations)
-      },
-      update: {
-        userId: session.userId,
-        items: this.buildImprovementItems(parsed.recommendations)
-      }
-    });
+      await tx.assessmentDimensionScore.deleteMany({ where: { reportId: report.id } });
+      await tx.assessmentDimensionScore.createMany({
+        data: parsed.dimensionScores.map((dimension, index) => ({
+          reportId: report.id,
+          dimensionKey: dimension.dimensionKey,
+          dimensionName: dimension.dimensionName,
+          score: dimension.score,
+          rationale: dimension.rationale,
+          position: index + 1
+        }))
+      });
 
-    await this.prisma.interviewSession.update({
-      where: { id: sessionId },
-      data: { status: InterviewStatus.COMPLETED, endedAt: new Date() }
+      await tx.assessmentFinding.deleteMany({ where: { reportId: report.id } });
+      await tx.assessmentFinding.createMany({
+        data: [
+          ...parsed.strengths.map((finding, index) => ({
+            reportId: report.id,
+            type: AssessmentFindingType.STRENGTH,
+            dimensionKey: finding.dimensionKey,
+            content: finding.content,
+            position: index + 1
+          })),
+          ...parsed.weaknesses.map((finding, index) => ({
+            reportId: report.id,
+            type: AssessmentFindingType.WEAKNESS,
+            dimensionKey: finding.dimensionKey,
+            content: finding.content,
+            position: index + 1
+          }))
+        ]
+      });
+
+      const plan = await tx.improvementPlan.upsert({
+        where: { reportId: report.id },
+        create: {
+          userId: session.userId,
+          reportId: report.id,
+          items: this.buildImprovementItems(parsed)
+        },
+        update: {
+          userId: session.userId,
+          items: this.buildImprovementItems(parsed)
+        }
+      });
+
+      await tx.improvementPlanItem.deleteMany({ where: { planId: plan.id } });
+      await tx.improvementPlanItem.createMany({
+        data: parsed.improvementPlan.map((item) => ({
+          planId: plan.id,
+          dimensionKey: item.dimensionKey,
+          title: item.title,
+          weakness: item.weakness,
+          practiceMethod: item.practiceMethod,
+          priority: item.priority,
+          estimatedMinutes: item.estimatedMinutes
+        }))
+      });
+
+      await tx.interviewSession.update({
+        where: { id: sessionId },
+        data: { status: InterviewStatus.COMPLETED, endedAt: new Date() }
+      });
     });
 
     return this.get(userId, role, sessionId);
@@ -163,7 +260,21 @@ export class InterviewsService {
     return this.get(userId, role, sessionId).then((session) => session.report);
   }
 
-  private parseReport(raw: string) {
+  private reportInclude() {
+    return {
+      include: {
+        dimensionScoreRows: { orderBy: { position: 'asc' as const } },
+        findings: { orderBy: { position: 'asc' as const } },
+        improvementPlans: {
+          include: {
+            planItems: { orderBy: { priority: 'asc' as const }, include: { skill: true, learningItem: true } }
+          }
+        }
+      }
+    };
+  }
+
+  private parseReport(raw: string): AssessmentReportPayload {
     let parsed: unknown;
 
     try {
@@ -179,33 +290,102 @@ export class InterviewsService {
     return parsed;
   }
 
-  private buildImprovementItems(recommendations: string[]) {
-    return recommendations.map((title: string, index: number) => ({
-      title,
-      priority: index + 1,
+  private buildImprovementItems(report: AssessmentReportPayload) {
+    return report.improvementPlan.map((item) => ({
+      title: item.title,
+      dimensionKey: item.dimensionKey,
+      weakness: item.weakness,
+      practiceMethod: item.practiceMethod,
+      priority: item.priority,
+      estimatedMinutes: item.estimatedMinutes,
       status: 'TODO'
     }));
   }
 
-  private isValidReport(value: unknown): value is {
-    overallScore: number;
-    dimensionScores: Record<string, number>;
-    summary: string;
-    recommendations: string[];
-  } {
+  private legacyDimensionScores(report: AssessmentReportPayload) {
+    return Object.fromEntries(report.dimensionScores.map((dimension) => [dimension.dimensionName, dimension.score]));
+  }
+
+  private legacyRecommendations(report: AssessmentReportPayload) {
+    return report.improvementPlan.map((item) => item.title);
+  }
+
+  private isValidReport(value: unknown): value is AssessmentReportPayload {
     if (!value || typeof value !== 'object') return false;
     const report = value as Record<string, unknown>;
     if (!this.isScore(report.overallScore)) return false;
-    if (!this.isScoreRecord(report.dimensionScores)) return false;
+    if (!Array.isArray(report.dimensionScores) || !this.hasRequiredDimensions(report.dimensionScores)) return false;
     if (typeof report.summary !== 'string' || !report.summary.trim()) return false;
-    if (!Array.isArray(report.recommendations)) return false;
-    return report.recommendations.every((recommendation) => typeof recommendation === 'string' && Boolean(recommendation.trim()));
+    if (!Array.isArray(report.strengths) || !this.isValidFindings(report.strengths)) return false;
+    if (!Array.isArray(report.weaknesses) || !this.isValidFindings(report.weaknesses)) return false;
+    if (!Array.isArray(report.improvementPlan) || !this.isValidImprovementPlan(report.improvementPlan)) return false;
+    if (typeof report.nextPractice !== 'string' || !report.nextPractice.trim()) return false;
+    return true;
   }
 
-  private isScoreRecord(value: unknown): value is Record<string, number> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-    const entries = Object.entries(value);
-    return entries.length > 0 && entries.every(([key, score]) => Boolean(key.trim()) && this.isScore(score));
+  private hasRequiredDimensions(value: unknown[]): value is AssessmentDimensionScorePayload[] {
+    if (value.length !== ASSESSMENT_DIMENSIONS.length) return false;
+    const seen = new Set<string>();
+    return value.every((item) => {
+      if (!item || typeof item !== 'object') return false;
+      const dimension = item as Record<string, unknown>;
+      if (!this.isKnownDimensionKey(dimension.dimensionKey)) return false;
+      if (seen.has(dimension.dimensionKey)) return false;
+      seen.add(dimension.dimensionKey);
+      const expectedName = ASSESSMENT_DIMENSIONS.find((entry) => entry.key === dimension.dimensionKey)?.name;
+      return (
+        dimension.dimensionName === expectedName &&
+        this.isScore(dimension.score) &&
+        typeof dimension.rationale === 'string' &&
+        Boolean(dimension.rationale.trim())
+      );
+    });
+  }
+
+  private isValidFindings(value: unknown[]): value is AssessmentFindingPayload[] {
+    return (
+      value.length > 0 &&
+      value.every((item) => {
+        if (!item || typeof item !== 'object') return false;
+        const finding = item as Record<string, unknown>;
+        return this.isKnownDimensionKey(finding.dimensionKey) && typeof finding.content === 'string' && Boolean(finding.content.trim());
+      })
+    );
+  }
+
+  private isValidImprovementPlan(value: unknown[]): value is ImprovementPlanItemPayload[] {
+    return (
+      value.length > 0 &&
+      value.every((item) => {
+        if (!item || typeof item !== 'object') return false;
+        const planItem = item as Record<string, unknown>;
+        return (
+          this.isKnownDimensionKey(planItem.dimensionKey) &&
+          typeof planItem.title === 'string' &&
+          Boolean(planItem.title.trim()) &&
+          typeof planItem.weakness === 'string' &&
+          Boolean(planItem.weakness.trim()) &&
+          typeof planItem.practiceMethod === 'string' &&
+          Boolean(planItem.practiceMethod.trim()) &&
+          typeof planItem.priority === 'number' &&
+          Number.isInteger(planItem.priority) &&
+          planItem.priority > 0 &&
+          typeof planItem.estimatedMinutes === 'number' &&
+          Number.isInteger(planItem.estimatedMinutes) &&
+          planItem.estimatedMinutes > 0 &&
+          this.isOptionalId(planItem.skillId) &&
+          this.isOptionalId(planItem.learningItemId)
+        );
+      })
+    );
+  }
+
+  private isKnownDimensionKey(value: unknown): value is AssessmentDimensionKey {
+    return typeof value === 'string' && ASSESSMENT_DIMENSIONS.some((dimension) => dimension.key === value);
+  }
+
+  private isOptionalId(value: unknown) {
+    return value === undefined || value === null || (typeof value === 'string' && Boolean(value.trim()));
   }
 
   private isScore(value: unknown): value is number {

@@ -73,6 +73,11 @@ enum AiRunStatus {
   MOCKED
 }
 
+enum AssessmentFindingType {
+  STRENGTH
+  WEAKNESS
+}
+
 model User {
   id                String             @id @default(cuid())
   email             String             @unique
@@ -91,14 +96,14 @@ model User {
 }
 
 model UserProfile {
-  id             String       @id @default(cuid())
-  userId         String       @unique
-  targetRoleId   String?
-  level          Difficulty   @default(MID)
-  goals          String       @default("")
-  preferences    Json         @default("{}")
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  targetRole     RoleProfile? @relation(fields: [targetRoleId], references: [id])
+  id           String       @id @default(cuid())
+  userId       String       @unique
+  targetRoleId String?
+  level        Difficulty   @default(MID)
+  goals        String       @default("")
+  preferences  Json         @default("{}")
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetRole   RoleProfile? @relation(fields: [targetRoleId], references: [id])
 }
 
 model RoleProfile {
@@ -116,50 +121,51 @@ model RoleProfile {
 }
 
 model Skill {
-  id            String              @id @default(cuid())
-  roleProfileId String
-  name          String
-  category      String
-  level         Difficulty          @default(MID)
-  description   String
-  embedding     Unsupported("vector")?
-  roleProfile   RoleProfile         @relation(fields: [roleProfileId], references: [id], onDelete: Cascade)
-  questions     InterviewQuestion[]
-  learningItems LearningItem[]
+  id                   String                 @id @default(cuid())
+  roleProfileId        String
+  name                 String
+  category             String
+  level                Difficulty             @default(MID)
+  description          String
+  embedding            Unsupported("vector")?
+  roleProfile          RoleProfile            @relation(fields: [roleProfileId], references: [id], onDelete: Cascade)
+  questions            InterviewQuestion[]
+  learningItems        LearningItem[]
+  improvementPlanItems ImprovementPlanItem[]
 
   @@index([roleProfileId])
 }
 
 model InterviewQuestion {
-  id            String        @id @default(cuid())
+  id            String       @id @default(cuid())
   roleProfileId String
   skillId       String?
   difficulty    Difficulty
   question      String
   rubric        Json
-  status        RecordStatus  @default(ACTIVE)
-  version       Int           @default(1)
-  createdAt     DateTime      @default(now())
-  roleProfile   RoleProfile   @relation(fields: [roleProfileId], references: [id], onDelete: Cascade)
-  skill         Skill?        @relation(fields: [skillId], references: [id])
+  status        RecordStatus @default(ACTIVE)
+  version       Int          @default(1)
+  createdAt     DateTime     @default(now())
+  roleProfile   RoleProfile  @relation(fields: [roleProfileId], references: [id], onDelete: Cascade)
+  skill         Skill?       @relation(fields: [skillId], references: [id])
 }
 
 model InterviewSession {
-  id             String             @id @default(cuid())
-  userId         String
-  roleProfileId  String
-  mode           InterviewMode      @default(TEXT)
-  difficulty     Difficulty         @default(MID)
-  topic          String?
-  status         InterviewStatus    @default(CREATED)
-  startedAt      DateTime?
-  endedAt        DateTime?
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  roleProfile    RoleProfile        @relation(fields: [roleProfileId], references: [id])
-  turns          InterviewTurn[]
-  report         AssessmentReport?
+  id            String            @id @default(cuid())
+  userId        String
+  roleProfileId String
+  mode          InterviewMode     @default(TEXT)
+  difficulty    Difficulty        @default(MID)
+  topic         String?
+  status        InterviewStatus   @default(CREATED)
+  startedAt     DateTime?
+  endedAt       DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleProfile   RoleProfile       @relation(fields: [roleProfileId], references: [id])
+  turns         InterviewTurn[]
+  report        AssessmentReport?
 }
 
 model InterviewTurn {
@@ -175,39 +181,100 @@ model InterviewTurn {
 }
 
 model AssessmentReport {
-  id               String            @id @default(cuid())
-  sessionId        String            @unique
-  overallScore     Int
-  dimensionScores  Json
-  summary          String
-  recommendations  Json
-  createdAt        DateTime          @default(now())
-  session          InterviewSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  improvementPlans ImprovementPlan[]
+  id                 String                     @id @default(cuid())
+  sessionId          String                     @unique
+  overallScore       Int
+  dimensionScores    Json
+  summary            String
+  recommendations    Json
+  schemaVersion      Int                        @default(1)
+  nextPractice       String                     @default("")
+  createdAt          DateTime                   @default(now())
+  session            InterviewSession           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  dimensionScoreRows AssessmentDimensionScore[]
+  findings           AssessmentFinding[]
+  improvementPlans   ImprovementPlan[]
 }
 
 model ImprovementPlan {
-  id        String           @id @default(cuid())
+  id        String                @id @default(cuid())
   userId    String
-  reportId  String           @unique
-  status    ProgressStatus   @default(TODO)
+  reportId  String                @unique
+  status    ProgressStatus        @default(TODO)
   items     Json
-  createdAt DateTime         @default(now())
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  report    AssessmentReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  createdAt DateTime              @default(now())
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  report    AssessmentReport      @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  planItems ImprovementPlanItem[]
+}
+
+model AssessmentDimensionScore {
+  id            String           @id @default(cuid())
+  reportId      String
+  dimensionKey  String
+  dimensionName String
+  score         Int
+  rationale     String
+  position      Int
+  createdAt     DateTime         @default(now())
+  report        AssessmentReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, dimensionKey])
+  @@index([reportId, position])
+  @@index([dimensionKey])
+}
+
+model AssessmentFinding {
+  id           String                @id @default(cuid())
+  reportId     String
+  type         AssessmentFindingType
+  dimensionKey String
+  content      String
+  position     Int
+  createdAt    DateTime              @default(now())
+  report       AssessmentReport      @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, type])
+  @@index([reportId, position])
+  @@index([dimensionKey])
+}
+
+model ImprovementPlanItem {
+  id               String          @id @default(cuid())
+  planId           String
+  dimensionKey     String
+  title            String
+  weakness         String
+  practiceMethod   String
+  priority         Int
+  estimatedMinutes Int             @default(30)
+  status           ProgressStatus  @default(TODO)
+  skillId          String?
+  learningItemId   String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  plan             ImprovementPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  skill            Skill?          @relation(fields: [skillId], references: [id], onDelete: SetNull)
+  learningItem     LearningItem?   @relation(fields: [learningItemId], references: [id], onDelete: SetNull)
+
+  @@index([planId, priority])
+  @@index([dimensionKey])
+  @@index([skillId])
+  @@index([learningItemId])
 }
 
 model LearningItem {
-  id               String             @id @default(cuid())
-  skillId          String?
-  type             LearningType
-  title            String
-  description      String
-  contentUrl       String?
-  estimatedMinutes Int                @default(20)
-  embedding        Unsupported("vector")?
-  skill            Skill?             @relation(fields: [skillId], references: [id])
-  progress         LearningProgress[]
+  id                   String                 @id @default(cuid())
+  skillId              String?
+  type                 LearningType
+  title                String
+  description          String
+  contentUrl           String?
+  estimatedMinutes     Int                    @default(20)
+  embedding            Unsupported("vector")?
+  skill                Skill?                 @relation(fields: [skillId], references: [id])
+  progress             LearningProgress[]
+  improvementPlanItems ImprovementPlanItem[]
 }
 
 model LearningProgress {
@@ -235,28 +302,28 @@ model SourceFeed {
 }
 
 model IntelligenceArticle {
-  id          String             @id @default(cuid())
+  id          String            @id @default(cuid())
   sourceId    String
   title       String
-  url         String             @unique
+  url         String            @unique
   publishedAt DateTime?
   rawHash     String
-  status      RecordStatus       @default(ACTIVE)
-  createdAt   DateTime           @default(now())
-  source      SourceFeed         @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  status      RecordStatus      @default(ACTIVE)
+  createdAt   DateTime          @default(now())
+  source      SourceFeed        @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   digest      ArticleDigest?
   bookmarks   ArticleBookmark[]
 }
 
 model ArticleDigest {
-  id              String              @id @default(cuid())
-  articleId       String              @unique
+  id              String                 @id @default(cuid())
+  articleId       String                 @unique
   summary         String
   tags            String[]
   relevanceScores Json
   embedding       Unsupported("vector")?
-  createdAt       DateTime            @default(now())
-  article         IntelligenceArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  createdAt       DateTime               @default(now())
+  article         IntelligenceArticle    @relation(fields: [articleId], references: [id], onDelete: Cascade)
 }
 
 model ArticleBookmark {

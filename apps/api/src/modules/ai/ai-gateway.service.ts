@@ -76,18 +76,43 @@ export class AiGatewayService {
     if (request.taskType === 'assessment_report') {
       return JSON.stringify({
         overallScore: 78,
-        dimensionScores: {
-          domainUnderstanding: 82,
-          aiApplicationDepth: 76,
-          structuredCommunication: 80,
-          executionJudgment: 74
-        },
-        summary: '回答具备较好的 AI 应用意识和结构化表达，但对评估指标、工程边界和上线后的反馈闭环还可以更具体。',
-        recommendations: [
-          '补充 AI Agent 适用场景与不适用场景的判断框架',
-          '练习用指标描述方案价值，例如转化率、节省工时、错误率和用户满意度',
-          '准备一个端到端项目案例，覆盖需求、架构、评估和迭代'
-        ]
+        dimensionScores: [
+          { dimensionKey: 'ai_llm_foundation', dimensionName: 'AI / LLM 基础理解', score: 82, rationale: '能够说明 LLM 应用价值和限制，但边界条件还可以更明确。' },
+          { dimensionKey: 'agent_rag_tooling_depth', dimensionName: 'Agent / RAG / 工具调用技术深度', score: 76, rationale: '了解 Agent 和工具调用，但对评估、记忆和失败恢复描述不足。' },
+          { dimensionKey: 'system_architecture_engineering', dimensionName: '系统架构与工程实现能力', score: 74, rationale: '能描述主链路，但缺少部署、观测和权限设计细节。' },
+          { dimensionKey: 'application_solution_design', dimensionName: '应用方案设计能力', score: 80, rationale: '方案目标较清晰，能围绕用户场景拆解能力闭环。' },
+          { dimensionKey: 'business_product_decomposition', dimensionName: '业务 / 产品拆解能力', score: 78, rationale: '能把业务问题转为产品目标，但用户分层和优先级还不够具体。' },
+          { dimensionKey: 'evaluation_metrics_risk', dimensionName: '评估、指标与风险控制', score: 72, rationale: '提到指标意识，但缺少离线评测、线上监控和风险处置闭环。' },
+          { dimensionKey: 'structured_communication', dimensionName: '表达结构与沟通能力', score: 84, rationale: '回答结构清晰，能够按背景、方案、风险和结果展开。' }
+        ],
+        summary: '回答具备较好的 AI 应用意识和结构化表达，但对技术实现、评估指标和上线后的反馈闭环还可以更具体。',
+        strengths: [
+          { dimensionKey: 'structured_communication', content: '表达有层次，能把问题、方案和结果串起来。' },
+          { dimensionKey: 'application_solution_design', content: '能够围绕真实业务场景设计 AI 应用方案。' }
+        ],
+        weaknesses: [
+          { dimensionKey: 'evaluation_metrics_risk', content: '评估指标、风险控制和上线后监控描述偏泛。' },
+          { dimensionKey: 'system_architecture_engineering', content: '工程实现细节不足，缺少权限、部署、观测和失败恢复设计。' }
+        ],
+        improvementPlan: [
+          {
+            dimensionKey: 'evaluation_metrics_risk',
+            title: '补充 Agent 评估指标框架',
+            weakness: '缺少离线评测、线上监控和风险处置闭环。',
+            practiceMethod: '用一个真实 Agent 场景写出 5 个离线指标、3 个线上指标和对应报警阈值。',
+            priority: 1,
+            estimatedMinutes: 45
+          },
+          {
+            dimensionKey: 'system_architecture_engineering',
+            title: '补齐端到端工程架构表达',
+            weakness: '工程实现细节不足。',
+            practiceMethod: '画出从用户请求、工具调用、权限校验、日志观测到失败重试的链路，并用面试语言讲一遍。',
+            priority: 2,
+            estimatedMinutes: 60
+          }
+        ],
+        nextPractice: '下一轮建议围绕 Agent 评估体系和生产级部署进行专项追问。'
       });
     }
 

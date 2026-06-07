@@ -1,13 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Bot, Send, SquareCheckBig } from 'lucide-react';
+import { Bot, ExternalLink, Send, SquareCheckBig } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Panel } from '@/components/ui/panel';
 import { InlineEmpty, InlineError, InlineLoading, apiErrorMessage, apiErrorRequestId } from '@/components/ui/state';
 import { api, ApiError } from '@/lib/api';
-import type { Difficulty, InterviewSession, RoleProfile } from '@/lib/types';
+import type { AssessmentDimensionScore, Difficulty, ImprovementPlanItem, InterviewSession, RoleProfile } from '@/lib/types';
 
 const MAX_CANDIDATE_ANSWERS = 5;
 const MIN_CANDIDATE_ANSWERS_FOR_REPORT = 2;
@@ -174,12 +174,7 @@ export default function InterviewsPage() {
                 <div className="text-xs font-medium uppercase text-slate-500">目标岗位</div>
                 <div className="grid gap-2">
                   {roles.map((role) => (
-                    <button
-                      key={role.id}
-                      className={selectionClass(role.id === selectedRole?.id)}
-                      onClick={() => setSelectedRoleId(role.id)}
-                      type="button"
-                    >
+                    <button key={role.id} className={selectionClass(role.id === selectedRole?.id)} onClick={() => setSelectedRoleId(role.id)} type="button">
                       <span className="font-medium">{role.name}</span>
                       <span className="mt-1 block text-xs text-slate-400">{role.description}</span>
                     </button>
@@ -219,15 +214,10 @@ export default function InterviewsPage() {
           <div className="mt-3 space-y-2">
             {!loading && !sessions.length && <InlineEmpty title="暂无历史面试" description="完成或启动一次面试后，这里会显示真实记录。" />}
             {sessions.map((session) => (
-              <button
-                key={session.id}
-                className={selectionClass(current?.id === session.id)}
-                onClick={() => void selectSession(session.id)}
-                type="button"
-              >
+              <button key={session.id} className={selectionClass(current?.id === session.id)} onClick={() => void selectSession(session.id)} type="button">
                 <span className="font-medium">{session.roleProfile.name}</span>
                 <span className="mt-1 block text-xs text-slate-400">
-                  {difficultyLabel(session.difficulty as Difficulty)} · {statusLabel(session.status)} · {countCandidateAnswers(session)}/{MAX_CANDIDATE_ANSWERS}
+                  {difficultyLabel(session.difficulty as Difficulty)} / {statusLabel(session.status)} / {countCandidateAnswers(session)}/{MAX_CANDIDATE_ANSWERS}
                 </span>
               </button>
             ))}
@@ -240,7 +230,7 @@ export default function InterviewsPage() {
               <div>
                 <h2 className="text-lg font-semibold">面试工作区</h2>
                 <p className="mt-1 text-sm text-slate-400">
-                  {current ? `${current.roleProfile.name} · ${difficultyLabel(current.difficulty as Difficulty)} · ${current.topic ?? DEFAULT_TOPIC}` : '选择岗位画像后开始一次文本模拟面试'}
+                  {current ? `${current.roleProfile.name} / ${difficultyLabel(current.difficulty as Difficulty)} / ${current.topic ?? DEFAULT_TOPIC}` : '选择岗位画像后开始一次文本模拟面试'}
                 </p>
               </div>
               <span className="rounded-md border border-cyan/40 px-2 py-1 text-sm text-cyan">
@@ -260,9 +250,7 @@ export default function InterviewsPage() {
                 </div>
               ))}
               {!current && <InlineEmpty title="尚未开始面试" description="配置岗位、难度和主题后，开始一场 5 轮文本模拟面试。" />}
-              {current && reachedMaxAnswers && !completed && (
-                <InlineEmpty title="已完成 5 轮回答" description="本轮面试已达到默认轮数上限，可以结束并生成评分报告。" />
-              )}
+              {current && reachedMaxAnswers && !completed && <InlineEmpty title="已完成 5 轮回答" description="本轮面试已达到默认轮数上限，可以结束并生成评分报告。" />}
             </div>
 
             <div className="mt-5 space-y-3">
@@ -292,7 +280,17 @@ export default function InterviewsPage() {
             </div>
           </Panel>
 
-          {current?.report ? <ReportPanel session={current} /> : <Panel>{current ? <InlineEmpty title="暂无评分报告" description="结束面试后，这里会展示总分、维度分和补弱建议。" /> : <InlineEmpty title="报告等待生成" description="完成一场面试后再生成结构化评分报告。" />}</Panel>}
+          {current?.report ? (
+            <ReportPanel session={current} />
+          ) : (
+            <Panel>
+              {current ? (
+                <InlineEmpty title="暂无评分报告" description="结束面试后，这里会展示总分、维度分和补弱建议。" />
+              ) : (
+                <InlineEmpty title="报告等待生成" description="完成一场面试后再生成结构化评分报告。" />
+              )}
+            </Panel>
+          )}
         </div>
       </div>
     </AppShell>
@@ -302,43 +300,115 @@ export default function InterviewsPage() {
 function ReportPanel({ session }: { session: InterviewSession }) {
   const report = session.report;
   if (!report) return null;
-  const dimensions = Object.entries(report.dimensionScores ?? {});
-  const recommendations = Array.isArray(report.recommendations) ? report.recommendations : [];
+  const dimensions = normalizeDimensions(report.dimensionScoreRows, report.dimensionScores);
+  const strengths = (report.findings ?? []).filter((item) => item.type === 'STRENGTH');
+  const weaknesses = (report.findings ?? []).filter((item) => item.type === 'WEAKNESS');
+  const planItems = normalizePlanItems(report.improvementPlans?.[0]?.planItems, report.recommendations);
 
   return (
     <Panel>
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="text-lg font-semibold">评分报告</h2>
         <span className="rounded-md bg-acid/10 px-2 py-1 text-sm text-acid">{report.overallScore}/100</span>
       </div>
       <p className="text-sm leading-6 text-slate-300">{report.summary}</p>
 
       <div className="mt-5 grid gap-3 md:grid-cols-2">
-        {dimensions.map(([name, score]) => (
-          <div key={name} className="rounded-md border border-line bg-black/20 p-3">
-            <div className="flex justify-between text-sm">
-              <span>{name}</span>
-              <span className="text-cyan">{score}</span>
+        {dimensions.map((dimension) => (
+          <div key={dimension.dimensionKey} className="rounded-md border border-line bg-black/20 p-3">
+            <div className="flex justify-between gap-3 text-sm">
+              <span>{dimension.dimensionName}</span>
+              <span className="shrink-0 text-cyan">{dimension.score}</span>
             </div>
             <div className="mt-2 h-2 rounded-full bg-white/10">
-              <div className="h-2 rounded-full bg-cyan" style={{ width: `${Math.max(0, Math.min(100, score))}%` }} />
+              <div className="h-2 rounded-full bg-cyan" style={{ width: `${Math.max(0, Math.min(100, dimension.score))}%` }} />
             </div>
+            {dimension.rationale && <p className="mt-2 text-xs leading-5 text-slate-400">{dimension.rationale}</p>}
           </div>
         ))}
       </div>
 
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <FindingList title="优势" items={strengths.map((item) => item.content)} empty="暂无优势条目" />
+        <FindingList title="短板" items={weaknesses.map((item) => item.content)} empty="暂无短板条目" />
+      </div>
+
       <div className="mt-5">
-        <h3 className="text-sm font-semibold text-slate-300">补弱建议</h3>
+        <h3 className="text-sm font-semibold text-slate-300">补弱任务</h3>
         <div className="mt-3 grid gap-2">
-          {recommendations.map((item, index) => (
-            <div key={`${item}-${index}`} className="rounded-md border border-line bg-white/[0.03] p-3 text-sm text-slate-300">
-              {index + 1}. {item}
+          {planItems.map((item) => (
+            <div key={item.id} className="rounded-md border border-line bg-white/[0.03] p-3 text-sm text-slate-300">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium text-slate-100">
+                  {item.priority}. {item.title}
+                </span>
+                <span className="text-xs text-slate-500">{item.estimatedMinutes} 分钟</span>
+              </div>
+              {item.weakness && <p className="mt-2 text-xs leading-5 text-slate-400">短板：{item.weakness}</p>}
+              {item.practiceMethod && <p className="mt-1 text-xs leading-5 text-slate-400">练习方式：{item.practiceMethod}</p>}
+              {item.learningItem && (
+                <div className="mt-2 inline-flex items-center gap-2 rounded-md border border-cyan/30 px-2 py-1 text-xs text-cyan">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  {item.learningItem.title}
+                </div>
+              )}
             </div>
           ))}
         </div>
       </div>
+
+      {report.nextPractice && (
+        <div className="mt-5 rounded-md border border-acid/30 bg-acid/10 p-3 text-sm text-acid">
+          下一轮训练：{report.nextPractice}
+        </div>
+      )}
     </Panel>
   );
+}
+
+function FindingList({ title, items, empty }: { title: string; items: string[]; empty: string }) {
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-slate-300">{title}</h3>
+      <div className="mt-3 grid gap-2">
+        {items.length ? (
+          items.map((item, index) => (
+            <div key={`${item}-${index}`} className="rounded-md border border-line bg-white/[0.03] p-3 text-sm text-slate-300">
+              {item}
+            </div>
+          ))
+        ) : (
+          <InlineEmpty title={empty} description="完成新版评分后会展示结构化条目。" />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function normalizeDimensions(rows?: AssessmentDimensionScore[], legacy?: Record<string, number>): AssessmentDimensionScore[] {
+  if (rows?.length) return rows;
+  return Object.entries(legacy ?? {}).map(([dimensionName, score], index) => ({
+    id: dimensionName,
+    dimensionKey: dimensionName,
+    dimensionName,
+    score,
+    rationale: '',
+    position: index + 1
+  }));
+}
+
+function normalizePlanItems(items?: ImprovementPlanItem[], recommendations?: string[]): ImprovementPlanItem[] {
+  if (items?.length) return items;
+  return (recommendations ?? []).map((title, index) => ({
+    id: `${title}-${index}`,
+    dimensionKey: '',
+    title,
+    weakness: '',
+    practiceMethod: '',
+    priority: index + 1,
+    estimatedMinutes: 30,
+    status: 'TODO'
+  }));
 }
 
 function toPageError(error: unknown, scope: PageError['scope'], fallback: string): PageError {

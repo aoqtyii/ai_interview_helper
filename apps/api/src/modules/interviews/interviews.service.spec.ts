@@ -38,21 +38,30 @@ describe('InterviewsService', () => {
       assessmentReport: {
         upsert: vi.fn().mockResolvedValue({ id: 'report-1' })
       },
+      assessmentDimensionScore: {
+        deleteMany: vi.fn(),
+        createMany: vi.fn()
+      },
+      assessmentFinding: {
+        deleteMany: vi.fn(),
+        createMany: vi.fn()
+      },
       improvementPlan: {
         upsert: vi.fn().mockResolvedValue({ id: 'plan-1' })
+      },
+      improvementPlanItem: {
+        deleteMany: vi.fn(),
+        createMany: vi.fn()
       }
     };
-    const ai = {
-      run: vi.fn().mockResolvedValue(
-        JSON.stringify({
-          overallScore: 80,
-          dimensionScores: { communication: 80 },
-          summary: 'ok',
-          recommendations: ['Improve metrics depth']
-        })
-      )
+    const prismaWithTransaction = {
+      ...prisma,
+      $transaction: vi.fn((callback) => callback(prisma))
     };
-    const service = new InterviewsService(prisma as never, ai as never);
+    const ai = {
+      run: vi.fn().mockResolvedValue(JSON.stringify(buildValidAssessmentReport()))
+    };
+    const service = new InterviewsService(prismaWithTransaction as never, ai as never);
 
     await service.finish('user-1', UserRole.USER, 'session-1');
 
@@ -62,6 +71,17 @@ describe('InterviewsService', () => {
       })
     );
     expect(prisma.improvementPlan.upsert).toHaveBeenCalledOnce();
+    expect(prisma.assessmentDimensionScore.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.arrayContaining([expect.objectContaining({ reportId: 'report-1', dimensionKey: 'ai_llm_foundation' })])
+      })
+    );
+    expect(prisma.assessmentFinding.createMany).toHaveBeenCalledOnce();
+    expect(prisma.improvementPlanItem.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.arrayContaining([expect.objectContaining({ planId: 'plan-1', dimensionKey: 'evaluation_metrics_risk' })])
+      })
+    );
   });
 
   it('rejects invalid AI assessment JSON instead of creating fallback reports', async () => {
@@ -239,14 +259,7 @@ describe('InterviewsService', () => {
       }
     };
     const ai = {
-      run: vi.fn().mockResolvedValue(
-        JSON.stringify({
-          overallScore: 105,
-          dimensionScores: { communication: 80 },
-          summary: 'ok',
-          recommendations: ['Improve metrics depth']
-        })
-      )
+      run: vi.fn().mockResolvedValue(JSON.stringify({ ...buildValidAssessmentReport(), overallScore: 105 }))
     };
     const service = new InterviewsService(prisma as never, ai as never);
 
@@ -285,5 +298,34 @@ function buildSessionWithCandidateAnswers(candidateAnswers: number) {
       createdAt: new Date()
     })),
     report: null
+  };
+}
+
+function buildValidAssessmentReport() {
+  return {
+    overallScore: 80,
+    dimensionScores: [
+      { dimensionKey: 'ai_llm_foundation', dimensionName: 'AI / LLM 基础理解', score: 80, rationale: 'LLM basics are clear.' },
+      { dimensionKey: 'agent_rag_tooling_depth', dimensionName: 'Agent / RAG / 工具调用技术深度', score: 78, rationale: 'Agent and RAG concepts are present.' },
+      { dimensionKey: 'system_architecture_engineering', dimensionName: '系统架构与工程实现能力', score: 75, rationale: 'Architecture tradeoffs need more depth.' },
+      { dimensionKey: 'application_solution_design', dimensionName: '应用方案设计能力', score: 82, rationale: 'Solution framing is practical.' },
+      { dimensionKey: 'business_product_decomposition', dimensionName: '业务 / 产品拆解能力', score: 79, rationale: 'Business problem decomposition is structured.' },
+      { dimensionKey: 'evaluation_metrics_risk', dimensionName: '评估、指标与风险控制', score: 74, rationale: 'Metrics and risks need more concrete plans.' },
+      { dimensionKey: 'structured_communication', dimensionName: '表达结构与沟通能力', score: 84, rationale: 'Communication is clear.' }
+    ],
+    summary: 'The candidate has a solid baseline and needs deeper evaluation detail.',
+    strengths: [{ dimensionKey: 'structured_communication', content: 'Clear structure.' }],
+    weaknesses: [{ dimensionKey: 'evaluation_metrics_risk', content: 'Metrics need depth.' }],
+    improvementPlan: [
+      {
+        dimensionKey: 'evaluation_metrics_risk',
+        title: 'Improve metrics depth',
+        weakness: 'Metrics need depth.',
+        practiceMethod: 'Write offline and online metrics for an Agent scenario.',
+        priority: 1,
+        estimatedMinutes: 45
+      }
+    ],
+    nextPractice: 'Practice Agent evaluation.'
   };
 }

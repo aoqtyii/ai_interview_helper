@@ -23,10 +23,51 @@ export type InterviewSession = {
   turns?: { id: string; speaker: string; content: string }[];
   report?: {
     overallScore: number;
+    schemaVersion?: number;
     dimensionScores?: Record<string, number>;
+    dimensionScoreRows?: AssessmentDimensionScore[];
+    findings?: AssessmentFinding[];
     summary?: string;
     recommendations?: string[];
+    nextPractice?: string;
+    improvementPlans?: ImprovementPlan[];
   };
+};
+
+export type AssessmentDimensionScore = {
+  id: string;
+  dimensionKey: string;
+  dimensionName: string;
+  score: number;
+  rationale: string;
+  position: number;
+};
+
+export type AssessmentFinding = {
+  id: string;
+  type: 'STRENGTH' | 'WEAKNESS';
+  dimensionKey: string;
+  content: string;
+  position: number;
+};
+
+export type ImprovementPlan = {
+  id: string;
+  status: string;
+  planItems?: ImprovementPlanItem[];
+};
+
+export type ImprovementPlanItem = {
+  id: string;
+  dimensionKey: string;
+  title: string;
+  weakness: string;
+  practiceMethod: string;
+  priority: number;
+  estimatedMinutes: number;
+  status: string;
+  skill?: { id?: string; name: string } | null;
+  learningItem?: { id: string; title: string; contentUrl?: string | null } | null;
 };
 
 export type LearningItem = {
