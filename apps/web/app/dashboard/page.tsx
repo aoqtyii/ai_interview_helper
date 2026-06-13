@@ -26,11 +26,13 @@ export default async function DashboardPage() {
     );
   }
 
+  const weaknesses = latestWeaknesses(sessions);
+
   return (
     <AppShell>
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard label="最近面试" value={`${sessions.length}`} hint="可回放并生成评分报告" />
-        <StatCard label="待完成补弱" value={`${pendingLearning.length}`} hint="来自学习资源和报告建议" />
+        <StatCard label="待完成补弱" value={`${pendingLearning.length}`} hint="来自最近报告和学习资源" />
         <StatCard label="前沿资讯" value={`${articles.length}`} hint="RSS/API 聚合与 AI 摘要" />
       </div>
 
@@ -59,6 +61,23 @@ export default async function DashboardPage() {
               </div>
             ))}
           </div>
+
+          <div className="mt-5">
+            <h3 className="text-sm font-semibold text-slate-300">最近报告主要短板</h3>
+            <div className="mt-3 grid gap-2">
+              {weaknesses.length ? (
+                weaknesses.map((item, index) => (
+                  <div key={`${item}-${index}`} className="rounded-md border border-line bg-white/[0.03] p-3 text-sm text-slate-300">
+                    {item}
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-md border border-dashed border-line bg-white/[0.02] p-4 text-sm text-slate-400">
+                  完成一次面试评分后，这里会展示最近报告的主要短板。
+                </div>
+              )}
+            </div>
+          </div>
         </Panel>
 
         <Panel>
@@ -76,6 +95,7 @@ export default async function DashboardPage() {
                   <div className="mt-1 text-xs text-slate-400">
                     {item.estimatedMinutes} 分钟{item.roleProfile?.name ? ` / ${item.roleProfile.name}` : ''}
                   </div>
+                  {item.recommendedPlanItems?.length ? <div className="mt-2 text-xs text-cyan">来自最近面试报告推荐</div> : null}
                 </div>
               ))
             ) : (
@@ -103,4 +123,9 @@ function latestDimensions(sessions: InterviewSession[]) {
     { name: '系统架构与工程实现', score: 0 },
     { name: '评估指标与风险控制', score: 0 }
   ];
+}
+
+function latestWeaknesses(sessions: InterviewSession[]) {
+  const report = sessions.find((session) => session.report)?.report;
+  return (report?.findings ?? []).filter((item) => item.type === 'WEAKNESS').slice(0, 3).map((item) => item.content);
 }

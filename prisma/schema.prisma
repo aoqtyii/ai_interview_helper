@@ -244,22 +244,23 @@ model AssessmentFinding {
 }
 
 model ImprovementPlanItem {
-  id               String          @id @default(cuid())
-  planId           String
-  dimensionKey     String
-  title            String
-  weakness         String
-  practiceMethod   String
-  priority         Int
-  estimatedMinutes Int             @default(30)
-  status           ProgressStatus  @default(TODO)
-  skillId          String?
-  learningItemId   String?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  plan             ImprovementPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
-  skill            Skill?          @relation(fields: [skillId], references: [id], onDelete: SetNull)
-  learningItem     LearningItem?   @relation(fields: [learningItemId], references: [id], onDelete: SetNull)
+  id                   String                                @id @default(cuid())
+  planId               String
+  dimensionKey         String
+  title                String
+  weakness             String
+  practiceMethod       String
+  priority             Int
+  estimatedMinutes     Int                                   @default(30)
+  status               ProgressStatus                        @default(TODO)
+  skillId              String?
+  learningItemId       String?
+  createdAt            DateTime                              @default(now())
+  updatedAt            DateTime                              @updatedAt
+  plan                 ImprovementPlan                       @relation(fields: [planId], references: [id], onDelete: Cascade)
+  skill                Skill?                                @relation(fields: [skillId], references: [id], onDelete: SetNull)
+  learningItem         LearningItem?                         @relation(fields: [learningItemId], references: [id], onDelete: SetNull)
+  recommendedResources ImprovementPlanItemLearningResource[]
 
   @@index([planId, priority])
   @@index([dimensionKey])
@@ -267,28 +268,43 @@ model ImprovementPlanItem {
   @@index([learningItemId])
 }
 
+model ImprovementPlanItemLearningResource {
+  id             String              @id @default(cuid())
+  planItemId     String
+  learningItemId String
+  position       Int
+  createdAt      DateTime            @default(now())
+  planItem       ImprovementPlanItem @relation(fields: [planItemId], references: [id], onDelete: Cascade)
+  learningItem   LearningItem        @relation(fields: [learningItemId], references: [id], onDelete: Cascade)
+
+  @@unique([planItemId, learningItemId])
+  @@index([planItemId, position])
+  @@index([learningItemId])
+}
+
 model LearningItem {
-  id                   String                 @id @default(cuid())
+  id                   String                                @id @default(cuid())
   roleProfileId        String?
   skillId              String?
   type                 LearningType
   title                String
   description          String
   contentUrl           String?
-  difficulty           Difficulty             @default(MID)
-  tags                 String[]               @default([])
-  dimensionKeys        String[]               @default([])
-  status               RecordStatus           @default(ACTIVE)
-  sourceType           String                 @default("MANUAL")
-  sourceMetadata       Json                   @default("{}")
-  estimatedMinutes     Int                    @default(20)
+  difficulty           Difficulty                            @default(MID)
+  tags                 String[]                              @default([])
+  dimensionKeys        String[]                              @default([])
+  status               RecordStatus                          @default(ACTIVE)
+  sourceType           String                                @default("MANUAL")
+  sourceMetadata       Json                                  @default("{}")
+  estimatedMinutes     Int                                   @default(20)
   embedding            Unsupported("vector")?
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
-  roleProfile          RoleProfile?           @relation(fields: [roleProfileId], references: [id], onDelete: SetNull)
-  skill                Skill?                 @relation(fields: [skillId], references: [id])
+  createdAt            DateTime                              @default(now())
+  updatedAt            DateTime                              @updatedAt
+  roleProfile          RoleProfile?                          @relation(fields: [roleProfileId], references: [id], onDelete: SetNull)
+  skill                Skill?                                @relation(fields: [skillId], references: [id])
   progress             LearningProgress[]
   improvementPlanItems ImprovementPlanItem[]
+  recommendedPlanItems ImprovementPlanItemLearningResource[]
 
   @@index([roleProfileId])
   @@index([skillId])

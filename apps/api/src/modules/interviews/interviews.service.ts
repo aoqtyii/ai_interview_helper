@@ -1,11 +1,12 @@
 import { BadGatewayException, BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { AssessmentFindingType, Difficulty, InterviewStatus, RecordStatus, Speaker, UserRole } from '@prisma/client';
+import { AssessmentFindingType, Difficulty, InterviewStatus, Prisma, RecordStatus, Speaker, UserRole } from '@prisma/client';
 import { AiGatewayService } from '../ai/ai-gateway.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const MAX_CANDIDATE_ANSWERS = 5;
 const MIN_CANDIDATE_ANSWERS_FOR_REPORT = 2;
 const ASSESSMENT_SCHEMA_VERSION = 2;
+const MAX_RECOMMENDED_RESOURCES_PER_PLAN_ITEM = 3;
 const ASSESSMENT_DIMENSIONS = [
   { key: 'ai_llm_foundation', name: 'AI / LLM 基础理解' },
   { key: 'agent_rag_tooling_depth', name: 'Agent / RAG / 工具调用技术深度' },
@@ -94,7 +95,7 @@ export class InterviewsService {
   list(userId: string, role: UserRole) {
     return this.prisma.interviewSession.findMany({
       where: role === UserRole.ADMIN ? undefined : { userId },
-      include: { roleProfile: true, report: this.reportInclude(), turns: { take: 1, orderBy: { createdAt: 'desc' } } },
+      include: { roleProfile: true, report: this.reportInclude(userId), turns: { take: 1, orderBy: { createdAt: 'desc' } } },
       orderBy: { createdAt: 'desc' }
     });
   }
@@ -102,7 +103,7 @@ export class InterviewsService {
   async get(userId: string, role: UserRole, sessionId: string) {
     const session = await this.prisma.interviewSession.findUnique({
       where: { id: sessionId },
-      include: { roleProfile: { include: { skills: true } }, turns: { orderBy: { createdAt: 'asc' } }, report: this.reportInclude() }
+      include: { roleProfile: { include: { skills: true } }, turns: { orderBy: { createdAt: 'asc' } }, report: this.reportInclude(userId) }
     });
     if (!session) throw new NotFoundException('Interview session not found');
     if (role !== UserRole.ADMIN && session.userId !== userId) throw new ForbiddenException('Cannot access this session');
@@ -236,18 +237,27 @@ export class InterviewsService {
       });
 
       await tx.improvementPlanItem.deleteMany({ where: { planId: plan.id } });
-      await tx.improvementPlanItem.createMany({
-        data: parsed.improvementPlan.map((item, index) => ({
-          planId: plan.id,
-          dimensionKey: item.dimensionKey,
-          title: item.title,
-          weakness: item.weakness,
-          practiceMethod: item.practiceMethod,
-          priority: item.priority,
-          estimatedMinutes: item.estimatedMinutes,
-          learningItemId: matchedLearningItems.get(index)
-        }))
-      });
+      for (const [index, item] of parsed.improvementPlan.entries()) {
+        const learningItemIds = matchedLearningItems.get(index) ?? [];
+        await tx.improvementPlanItem.create({
+          data: {
+            planId: plan.id,
+            dimensionKey: item.dimensionKey,
+            title: item.title,
+            weakness: item.weakness,
+            practiceMethod: item.practiceMethod,
+            priority: item.priority,
+            estimatedMinutes: item.estimatedMinutes,
+            learningItemId: learningItemIds[0],
+            recommendedResources: {
+              create: learningItemIds.map((learningItemId, resourceIndex) => ({
+                learningItemId,
+                position: resourceIndex + 1
+              }))
+            }
+          }
+        });
+      }
 
       await tx.interviewSession.update({
         where: { id: sessionId },
@@ -262,14 +272,24 @@ export class InterviewsService {
     return this.get(userId, role, sessionId).then((session) => session.report);
   }
 
-  private reportInclude() {
+  private reportInclude(userId: string) {
     return {
       include: {
         dimensionScoreRows: { orderBy: { position: 'asc' as const } },
         findings: { orderBy: { position: 'asc' as const } },
         improvementPlans: {
           include: {
-            planItems: { orderBy: { priority: 'asc' as const }, include: { skill: true, learningItem: true } }
+            planItems: {
+              orderBy: { priority: 'asc' as const },
+              include: {
+                skill: true,
+                learningItem: { include: { roleProfile: true, skill: true, progress: { where: { userId } } } },
+                recommendedResources: {
+                  orderBy: { position: 'asc' as const },
+                  include: { learningItem: { include: { roleProfile: true, skill: true, progress: { where: { userId } } } } }
+                }
+              }
+            }
           }
         }
       }
@@ -313,23 +333,50 @@ export class InterviewsService {
   }
 
   private async matchLearningItems(roleProfileId: string, items: ImprovementPlanItemPayload[]) {
-    const matches = new Map<number, string>();
+    const matches = new Map<number, string[]>();
 
     for (const [index, item] of items.entries()) {
-      const learningItem = await this.prisma.learningItem.findFirst({
-        where: {
-          status: RecordStatus.ACTIVE,
-          dimensionKeys: { has: item.dimensionKey },
-          OR: [{ roleProfileId }, { skill: { roleProfileId } }, { roleProfileId: null, skillId: null }]
-        },
-        orderBy: [{ estimatedMinutes: 'asc' }, { createdAt: 'desc' }],
-        select: { id: true }
+      const ids: string[] = [];
+      await this.collectLearningItemMatches(ids, {
+        status: RecordStatus.ACTIVE,
+        dimensionKeys: { has: item.dimensionKey },
+        ...(item.skillId ? { roleProfileId, skillId: item.skillId } : { id: '__skip__' })
+      });
+      await this.collectLearningItemMatches(ids, {
+        status: RecordStatus.ACTIVE,
+        roleProfileId,
+        dimensionKeys: { has: item.dimensionKey }
+      });
+      await this.collectLearningItemMatches(ids, {
+        status: RecordStatus.ACTIVE,
+        dimensionKeys: { has: item.dimensionKey },
+        skill: { roleProfileId }
+      });
+      await this.collectLearningItemMatches(ids, {
+        status: RecordStatus.ACTIVE,
+        roleProfileId: null,
+        skillId: null,
+        dimensionKeys: { has: item.dimensionKey }
       });
 
-      if (learningItem) matches.set(index, learningItem.id);
+      matches.set(index, ids.slice(0, MAX_RECOMMENDED_RESOURCES_PER_PLAN_ITEM));
     }
 
     return matches;
+  }
+
+  private async collectLearningItemMatches(target: string[], where: Prisma.LearningItemWhereInput) {
+    if (target.length >= MAX_RECOMMENDED_RESOURCES_PER_PLAN_ITEM) return;
+    const items = await this.prisma.learningItem.findMany({
+      where,
+      orderBy: [{ estimatedMinutes: 'asc' }, { createdAt: 'desc' }],
+      take: MAX_RECOMMENDED_RESOURCES_PER_PLAN_ITEM
+    });
+
+    for (const item of items) {
+      if (target.length >= MAX_RECOMMENDED_RESOURCES_PER_PLAN_ITEM) return;
+      if (!target.includes(item.id)) target.push(item.id);
+    }
   }
 
   private isValidReport(value: unknown): value is AssessmentReportPayload {

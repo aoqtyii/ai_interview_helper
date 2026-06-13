@@ -67,7 +67,14 @@ export type ImprovementPlanItem = {
   estimatedMinutes: number;
   status: string;
   skill?: { id?: string; name: string } | null;
-  learningItem?: { id: string; title: string; contentUrl?: string | null } | null;
+  learningItem?: LearningItem | null;
+  recommendedResources?: ImprovementPlanItemLearningResource[];
+};
+
+export type ImprovementPlanItemLearningResource = {
+  id: string;
+  position: number;
+  learningItem: LearningItem;
 };
 
 export type LearningItem = {
@@ -84,6 +91,16 @@ export type LearningItem = {
   roleProfile?: { id: string; name: string } | null;
   skill?: { id?: string; name: string; roleProfileId?: string } | null;
   progress?: LearningProgress[];
+  recommendedPlanItems?: Array<{
+    planItem: {
+      title: string;
+      plan: {
+        report: {
+          session: { roleProfile?: { name: string } };
+        };
+      };
+    };
+  }>;
 };
 
 export type LearningProgress = {

@@ -7,16 +7,17 @@ import { Button } from '@/components/ui/button';
 import { Panel } from '@/components/ui/panel';
 import { InlineEmpty, InlineError, InlineLoading, apiErrorMessage, apiErrorRequestId } from '@/components/ui/state';
 import { api, ApiError } from '@/lib/api';
-import type { AssessmentDimensionScore, Difficulty, ImprovementPlanItem, InterviewSession, RoleProfile } from '@/lib/types';
+import type { AssessmentDimensionScore, Difficulty, ImprovementPlanItem, InterviewSession, LearningItem, LearningProgress, RoleProfile } from '@/lib/types';
 
 const MAX_CANDIDATE_ANSWERS = 5;
 const MIN_CANDIDATE_ANSWERS_FOR_REPORT = 2;
 const DEFAULT_TOPIC = 'AI Agent 应用落地';
 
 type Operation = 'initial' | 'loadSession' | 'start' | 'answer' | 'finish';
+type ProgressStatus = LearningProgress['status'];
 
 type PageError = {
-  scope: 'load' | 'start' | 'answer' | 'finish';
+  scope: 'load' | 'start' | 'answer' | 'finish' | 'progress';
   message: string;
   requestId?: string;
 };
@@ -25,6 +26,12 @@ const difficultyOptions: Array<{ value: Difficulty; label: string }> = [
   { value: 'JUNIOR', label: '初级' },
   { value: 'MID', label: '中级' },
   { value: 'SENIOR', label: '高级' }
+];
+
+const progressOptions: Array<{ value: ProgressStatus; label: string }> = [
+  { value: 'TODO', label: '未开始' },
+  { value: 'IN_PROGRESS', label: '进行中' },
+  { value: 'DONE', label: '已完成' }
 ];
 
 export default function InterviewsPage() {
@@ -37,6 +44,7 @@ export default function InterviewsPage() {
   const [answer, setAnswer] = useState('');
   const [error, setError] = useState<PageError | null>(null);
   const [operation, setOperation] = useState<Operation | null>('initial');
+  const [updatingLearningItemId, setUpdatingLearningItemId] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +76,7 @@ export default function InterviewsPage() {
   const loading = operation !== null;
   const initialLoading = operation === 'initial' && !roles.length && !sessions.length && !current;
   const answerFailed = error?.scope === 'answer';
+  const progressFailed = error?.scope === 'progress';
   const candidateAnswers = countCandidateAnswers(current);
   const reachedMaxAnswers = candidateAnswers >= MAX_CANDIDATE_ANSWERS;
   const completed = current?.status === 'COMPLETED';
@@ -154,12 +163,29 @@ export default function InterviewsPage() {
     }
   }
 
+  async function updateLearningProgress(learningItemId: string, status: ProgressStatus) {
+    setUpdatingLearningItemId(learningItemId);
+    setError(null);
+    try {
+      const progress = await api<LearningProgress>('/learning/progress', {
+        method: 'POST',
+        body: JSON.stringify({ learningItemId, status })
+      });
+      setCurrent((existing) => (existing ? applyLearningProgress(existing, learningItemId, progress) : existing));
+      setSessions((existing) => existing.map((session) => applyLearningProgress(session, learningItemId, progress)));
+    } catch (nextError) {
+      setError(toPageError(nextError, 'progress', '学习进度更新失败，请稍后重试。'));
+    } finally {
+      setUpdatingLearningItemId('');
+    }
+  }
+
   return (
     <AppShell>
       <div className="grid gap-5 xl:grid-cols-[0.82fr_1.18fr]">
         <Panel>
           <h2 className="text-lg font-semibold">启动模拟面试</h2>
-          {error && error.scope !== 'answer' && (
+          {error && error.scope !== 'answer' && error.scope !== 'progress' && (
             <div className="mt-4">
               <InlineError title={errorTitle(error)} description={error.message} requestId={error.requestId} />
             </div>
@@ -280,8 +306,9 @@ export default function InterviewsPage() {
             </div>
           </Panel>
 
+          {progressFailed && <InlineError title="学习进度更新失败" description={error.message} requestId={error.requestId} />}
           {current?.report ? (
-            <ReportPanel session={current} />
+            <ReportPanel session={current} updatingLearningItemId={updatingLearningItemId} onProgressChange={updateLearningProgress} />
           ) : (
             <Panel>
               {current ? (
@@ -297,7 +324,15 @@ export default function InterviewsPage() {
   );
 }
 
-function ReportPanel({ session }: { session: InterviewSession }) {
+function ReportPanel({
+  session,
+  updatingLearningItemId,
+  onProgressChange
+}: {
+  session: InterviewSession;
+  updatingLearningItemId: string;
+  onProgressChange: (learningItemId: string, status: ProgressStatus) => Promise<void>;
+}) {
   const report = session.report;
   if (!report) return null;
   const dimensions = normalizeDimensions(report.dimensionScoreRows, report.dimensionScores);
@@ -335,30 +370,39 @@ function ReportPanel({ session }: { session: InterviewSession }) {
 
       <div className="mt-5">
         <h3 className="text-sm font-semibold text-slate-300">补弱任务</h3>
-        <div className="mt-3 grid gap-2">
-          {planItems.map((item) => (
-            <div key={item.id} className="rounded-md border border-line bg-white/[0.03] p-3 text-sm text-slate-300">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-medium text-slate-100">
-                  {item.priority}. {item.title}
-                </span>
-                <span className="text-xs text-slate-500">{item.estimatedMinutes} 分钟</span>
+        <div className="mt-3 grid gap-3">
+          {planItems.map((item) => {
+            const resources = recommendedLearningItems(item);
+            return (
+              <div key={item.id} className="rounded-md border border-line bg-white/[0.03] p-3 text-sm text-slate-300">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium text-slate-100">
+                    {item.priority}. {item.title}
+                  </span>
+                  <span className="text-xs text-slate-500">{item.estimatedMinutes} 分钟</span>
+                </div>
+                {item.weakness && <p className="mt-2 text-xs leading-5 text-slate-400">短板：{item.weakness}</p>}
+                {item.practiceMethod && <p className="mt-1 text-xs leading-5 text-slate-400">练习方式：{item.practiceMethod}</p>}
+
+                <div className="mt-3 grid gap-2">
+                  {resources.length ? (
+                    resources.map((resource) => (
+                      <LearningResourceCard
+                        key={resource.id}
+                        resource={resource}
+                        updating={updatingLearningItemId === resource.id}
+                        onProgressChange={onProgressChange}
+                      />
+                    ))
+                  ) : (
+                    <div className="rounded-md border border-dashed border-line px-2 py-2 text-xs text-slate-500">
+                      暂无匹配资源，仅展示文字练习任务。
+                    </div>
+                  )}
+                </div>
               </div>
-              {item.weakness && <p className="mt-2 text-xs leading-5 text-slate-400">短板：{item.weakness}</p>}
-              {item.practiceMethod && <p className="mt-1 text-xs leading-5 text-slate-400">练习方式：{item.practiceMethod}</p>}
-              {item.learningItem && (
-                <div className="mt-2 inline-flex items-center gap-2 rounded-md border border-cyan/30 px-2 py-1 text-xs text-cyan">
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  {item.learningItem.title}
-                </div>
-              )}
-              {!item.learningItem && (
-                <div className="mt-2 rounded-md border border-dashed border-line px-2 py-1 text-xs text-slate-500">
-                  暂无匹配资源，仅展示文字练习任务。
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -368,6 +412,48 @@ function ReportPanel({ session }: { session: InterviewSession }) {
         </div>
       )}
     </Panel>
+  );
+}
+
+function LearningResourceCard({
+  resource,
+  updating,
+  onProgressChange
+}: {
+  resource: LearningItem;
+  updating: boolean;
+  onProgressChange: (learningItemId: string, status: ProgressStatus) => Promise<void>;
+}) {
+  return (
+    <div className="rounded-md border border-cyan/25 bg-cyan/5 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="font-medium text-slate-100">{resource.title}</div>
+          <div className="mt-1 text-xs text-slate-400">
+            {learningTypeLabel(resource.type)} / {resource.estimatedMinutes} 分钟{resource.skill?.name ? ` / ${resource.skill.name}` : ''}
+          </div>
+        </div>
+        {resource.contentUrl && (
+          <a href={resource.contentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-cyan hover:text-acid">
+            打开
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        )}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {progressOptions.map((option) => (
+          <Button
+            key={option.value}
+            variant={currentProgress(resource) === option.value ? 'primary' : 'ghost'}
+            className="h-8 px-3"
+            onClick={() => void onProgressChange(resource.id, option.value)}
+            disabled={updating}
+          >
+            {option.label}
+          </Button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -388,6 +474,40 @@ function FindingList({ title, items, empty }: { title: string; items: string[]; 
       </div>
     </div>
   );
+}
+
+function recommendedLearningItems(item: ImprovementPlanItem) {
+  const resources = (item.recommendedResources ?? []).map((resource) => resource.learningItem);
+  if (!resources.length && item.learningItem) resources.push(item.learningItem);
+  return Array.from(new Map(resources.map((resource) => [resource.id, resource])).values()).slice(0, 3);
+}
+
+function currentProgress(item: LearningItem): ProgressStatus {
+  return item.progress?.[0]?.status ?? 'TODO';
+}
+
+function applyLearningProgress(session: InterviewSession, learningItemId: string, progress: LearningProgress): InterviewSession {
+  if (!session.report?.improvementPlans) return session;
+  return {
+    ...session,
+    report: {
+      ...session.report,
+      improvementPlans: session.report.improvementPlans.map((plan) => ({
+        ...plan,
+        planItems: plan.planItems?.map((item) => updatePlanItemProgress(item, learningItemId, progress))
+      }))
+    }
+  };
+}
+
+function updatePlanItemProgress(item: ImprovementPlanItem, learningItemId: string, progress: LearningProgress): ImprovementPlanItem {
+  return {
+    ...item,
+    learningItem: item.learningItem?.id === learningItemId ? { ...item.learningItem, progress: [progress] } : item.learningItem,
+    recommendedResources: item.recommendedResources?.map((resource) =>
+      resource.learningItem.id === learningItemId ? { ...resource, learningItem: { ...resource.learningItem, progress: [progress] } } : resource
+    )
+  };
 }
 
 function normalizeDimensions(rows?: AssessmentDimensionScore[], legacy?: Record<string, number>): AssessmentDimensionScore[] {
@@ -464,4 +584,14 @@ function statusLabel(value: string) {
   if (value === 'COMPLETED') return '已完成';
   if (value === 'CANCELLED') return '已取消';
   return value;
+}
+
+function learningTypeLabel(type: LearningItem['type']) {
+  if (type === 'ARTICLE') return '文章';
+  if (type === 'DOCUMENT') return '文档';
+  if (type === 'TASK') return '任务';
+  if (type === 'PROJECT') return '项目练习';
+  if (type === 'VIDEO') return '视频';
+  if (type === 'INTERVIEW_REVIEW') return '面试复盘';
+  return '练习';
 }

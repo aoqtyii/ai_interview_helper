@@ -50,11 +50,11 @@ describe('InterviewsService', () => {
         upsert: vi.fn().mockResolvedValue({ id: 'plan-1' })
       },
       learningItem: {
-        findFirst: vi.fn().mockResolvedValue({ id: 'learning-1' })
+        findMany: vi.fn().mockResolvedValue([{ id: 'learning-1' }, { id: 'learning-2' }, { id: 'learning-3' }])
       },
       improvementPlanItem: {
         deleteMany: vi.fn(),
-        createMany: vi.fn()
+        create: vi.fn().mockResolvedValue({ id: 'plan-item-1' })
       }
     };
     const prismaWithTransaction = {
@@ -80,9 +80,20 @@ describe('InterviewsService', () => {
       })
     );
     expect(prisma.assessmentFinding.createMany).toHaveBeenCalledOnce();
-    expect(prisma.improvementPlanItem.createMany).toHaveBeenCalledWith(
+    expect(prisma.improvementPlanItem.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.arrayContaining([expect.objectContaining({ planId: 'plan-1', dimensionKey: 'evaluation_metrics_risk', learningItemId: 'learning-1' })])
+        data: expect.objectContaining({
+          planId: 'plan-1',
+          dimensionKey: 'evaluation_metrics_risk',
+          learningItemId: 'learning-1',
+          recommendedResources: {
+            create: [
+              { learningItemId: 'learning-1', position: 1 },
+              { learningItemId: 'learning-2', position: 2 },
+              { learningItemId: 'learning-3', position: 3 }
+            ]
+          }
+        })
       })
     );
   });

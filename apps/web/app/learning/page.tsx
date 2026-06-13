@@ -104,6 +104,7 @@ export default function LearningPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-medium">{item.title}</span>
                         <span className="rounded-md bg-violet/10 px-2 py-1 text-xs text-violet">{learningTypeLabel(item.type)}</span>
+                        {item.recommendedPlanItems?.length ? <span className="rounded-md bg-cyan/10 px-2 py-1 text-xs text-cyan">来自面试报告推荐</span> : null}
                       </div>
                       <div className="mt-1 text-sm leading-6 text-slate-400">{item.description ?? item.skill?.name}</div>
                       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-400">

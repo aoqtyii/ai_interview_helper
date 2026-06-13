@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { ProgressStatus, RecordStatus } from '@prisma/client';
+import { InterviewStatus, ProgressStatus, RecordStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -32,8 +32,14 @@ export class LearningService {
   }
 
   async pending(userId: string) {
-    const items = await this.recommendations(userId);
-    return items.filter((item) => item.progress[0]?.status !== ProgressStatus.DONE).slice(0, 6);
+    const [reportItems, recommendedItems] = await Promise.all([this.latestReportRecommendedItems(userId), this.recommendations(userId)]);
+    const byId = new Map<string, (typeof recommendedItems)[number]>();
+
+    for (const item of [...reportItems, ...recommendedItems]) {
+      if (item.progress[0]?.status !== ProgressStatus.DONE && !byId.has(item.id)) byId.set(item.id, item);
+    }
+
+    return Array.from(byId.values()).slice(0, 6);
   }
 
   async progress(userId: string, input: { learningItemId: string; status: ProgressStatus; score?: number; note?: string; reflection?: string }) {
@@ -69,7 +75,60 @@ export class LearningService {
     return {
       roleProfile: true,
       skill: true,
-      progress: { where: { userId } }
+      progress: { where: { userId } },
+      recommendedPlanItems: {
+        take: 3,
+        orderBy: { createdAt: 'desc' as const },
+        include: {
+          planItem: {
+            include: {
+              plan: {
+                include: {
+                  report: {
+                    include: {
+                      session: { include: { roleProfile: true } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     };
+  }
+
+  private async latestReportRecommendedItems(userId: string) {
+    const report = await this.prisma.assessmentReport.findFirst({
+      where: { session: { userId, status: InterviewStatus.COMPLETED } },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        improvementPlans: {
+          include: {
+            planItems: {
+              orderBy: { priority: 'asc' },
+              include: {
+                recommendedResources: {
+                  orderBy: { position: 'asc' },
+                  include: {
+                    learningItem: {
+                      include: this.learningItemInclude(userId)
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    return (
+      report?.improvementPlans
+        .flatMap((plan) => plan.planItems)
+        .flatMap((planItem) => planItem.recommendedResources)
+        .map((resource) => resource.learningItem)
+        .filter((item) => item.status === RecordStatus.ACTIVE) ?? []
+    );
   }
 }
