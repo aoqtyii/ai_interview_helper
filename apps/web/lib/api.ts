@@ -1,4 +1,10 @@
-const API_BASE_URL = process.env.WEB_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
+function apiBaseUrl() {
+  if (typeof window !== 'undefined') {
+    return process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
+  }
+
+  return process.env.API_INTERNAL_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
+}
 
 export class ApiError extends Error {
   constructor(
@@ -16,7 +22,7 @@ type ApiErrorResponse = {
 };
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${apiBaseUrl()}${path}`, {
     ...init,
     credentials: 'include',
     headers: {
