@@ -18,6 +18,11 @@ export class InterviewsController {
     return this.interviews.list(user.id, user.role as UserRole);
   }
 
+  @Get('config')
+  config() {
+    return this.interviews.clientConfig();
+  }
+
   @Get('sessions/:id')
   get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.interviews.get(user.id, user.role as UserRole, id);

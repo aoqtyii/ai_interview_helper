@@ -62,6 +62,9 @@ describe('API HTTP boundaries', () => {
       aiRunLog: {
         findMany: vi.fn().mockResolvedValue([])
       },
+      systemSetting: {
+        findMany: vi.fn().mockResolvedValue([])
+      },
       assessmentReport: {
         upsert: assessmentReportUpsert
       },

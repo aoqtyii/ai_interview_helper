@@ -8,10 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Panel } from '@/components/ui/panel';
 import { InlineEmpty, InlineError, InlineLoading, apiErrorMessage, apiErrorRequestId } from '@/components/ui/state';
 import { api, ApiError } from '@/lib/api';
-import type { AssessmentDimensionScore, Difficulty, ImprovementPlanItem, InterviewSession, LearningItem, LearningProgress, RoleProfile } from '@/lib/types';
+import type { AssessmentDimensionScore, Difficulty, ImprovementPlanItem, InterviewConfig, InterviewSession, LearningItem, LearningProgress, RoleProfile } from '@/lib/types';
 
-const MAX_CANDIDATE_ANSWERS = 5;
-const MIN_CANDIDATE_ANSWERS_FOR_REPORT = 2;
+const DEFAULT_MAX_CANDIDATE_ANSWERS = 5;
+const DEFAULT_MIN_CANDIDATE_ANSWERS_FOR_REPORT = 2;
 const DEFAULT_TOPIC = 'AI Agent 应用落地';
 
 type Operation = 'initial' | 'loadSession' | 'start' | 'answer' | 'finish';
@@ -39,6 +39,12 @@ export default function InterviewsPage() {
   const [roles, setRoles] = useState<RoleProfile[]>([]);
   const [selectedRoleId, setSelectedRoleId] = useState('');
   const [difficulty, setDifficulty] = useState<Difficulty>('MID');
+  const [interviewConfig, setInterviewConfig] = useState<InterviewConfig>({
+    maxTurns: DEFAULT_MAX_CANDIDATE_ANSWERS,
+    minAnswersForReport: DEFAULT_MIN_CANDIDATE_ANSWERS_FOR_REPORT,
+    defaultTopic: DEFAULT_TOPIC,
+    focusedPracticeEnabled: true
+  });
   const [topic, setTopic] = useState(DEFAULT_TOPIC);
   const [sessions, setSessions] = useState<InterviewSession[]>([]);
   const [current, setCurrent] = useState<InterviewSession | null>(null);
@@ -54,10 +60,16 @@ export default function InterviewsPage() {
       setOperation('initial');
       try {
         const initialSessionId = new URLSearchParams(window.location.search).get('sessionId');
-        const [nextRoles, nextSessions] = await Promise.all([api<RoleProfile[]>('/role-profiles'), api<InterviewSession[]>('/interviews/sessions')]);
+        const [nextRoles, nextSessions, nextConfig] = await Promise.all([
+          api<RoleProfile[]>('/role-profiles'),
+          api<InterviewSession[]>('/interviews/sessions'),
+          api<InterviewConfig>('/interviews/config')
+        ]);
         const initialSession = initialSessionId ? await api<InterviewSession>(`/interviews/sessions/${initialSessionId}`) : null;
         if (cancelled) return;
         setRoles(nextRoles);
+        setInterviewConfig(nextConfig);
+        setTopic((existing) => (existing === DEFAULT_TOPIC ? nextConfig.defaultTopic : existing));
         setSelectedRoleId((existing) => existing || nextRoles[0]?.id || '');
         setSessions(nextSessions);
         if (initialSession) setCurrent(initialSession);
@@ -82,10 +94,10 @@ export default function InterviewsPage() {
   const answerFailed = error?.scope === 'answer';
   const progressFailed = error?.scope === 'progress';
   const candidateAnswers = countCandidateAnswers(current);
-  const reachedMaxAnswers = candidateAnswers >= MAX_CANDIDATE_ANSWERS;
+  const reachedMaxAnswers = candidateAnswers >= interviewConfig.maxTurns;
   const completed = current?.status === 'COMPLETED';
   const canAnswer = Boolean(current && !completed && !reachedMaxAnswers);
-  const canFinish = Boolean(current && !completed && candidateAnswers >= MIN_CANDIDATE_ANSWERS_FOR_REPORT);
+  const canFinish = Boolean(current && !completed && candidateAnswers >= interviewConfig.minAnswersForReport);
 
   async function startInterview() {
     if (!selectedRole) return;
@@ -98,7 +110,7 @@ export default function InterviewsPage() {
         body: JSON.stringify({
           roleProfileId: selectedRole.id,
           difficulty,
-          topic: trimmedTopic || DEFAULT_TOPIC
+          topic: trimmedTopic || interviewConfig.defaultTopic
         })
       });
       setCurrent(session);
@@ -146,10 +158,10 @@ export default function InterviewsPage() {
 
   async function finish() {
     if (!current || completed) return;
-    if (candidateAnswers < MIN_CANDIDATE_ANSWERS_FOR_REPORT) {
+    if (candidateAnswers < interviewConfig.minAnswersForReport) {
       setError({
         scope: 'finish',
-        message: `至少完成 ${MIN_CANDIDATE_ANSWERS_FOR_REPORT} 次回答后才能生成正式评分报告。`
+        message: `至少完成 ${interviewConfig.minAnswersForReport} 次回答后才能生成正式评分报告。`
       });
       return;
     }
@@ -237,7 +249,7 @@ export default function InterviewsPage() {
                 className="w-full rounded-md border border-line bg-black/30 px-3 py-2 text-sm outline-none focus:border-cyan/60"
                 value={topic}
                 onChange={(event) => setTopic(event.target.value)}
-                placeholder={DEFAULT_TOPIC}
+                placeholder={interviewConfig.defaultTopic}
               />
             </label>
           </div>
@@ -254,7 +266,7 @@ export default function InterviewsPage() {
               <button key={session.id} className={selectionClass(current?.id === session.id)} onClick={() => void selectSession(session.id)} type="button">
                 <span className="font-medium">{session.roleProfile.name}</span>
                 <span className="mt-1 block text-xs text-slate-400">
-                  {difficultyLabel(session.difficulty as Difficulty)} / {statusLabel(session.status)} / {countCandidateAnswers(session)}/{MAX_CANDIDATE_ANSWERS}
+                  {difficultyLabel(session.difficulty as Difficulty)} / {statusLabel(session.status)} / {countCandidateAnswers(session)}/{interviewConfig.maxTurns}
                 </span>
               </button>
             ))}
@@ -267,11 +279,11 @@ export default function InterviewsPage() {
               <div>
                 <h2 className="text-lg font-semibold">面试工作区</h2>
                 <p className="mt-1 text-sm text-slate-400">
-                  {current ? `${current.roleProfile.name} / ${difficultyLabel(current.difficulty as Difficulty)} / ${current.topic ?? DEFAULT_TOPIC}` : '选择岗位画像后开始一次文本模拟面试'}
+                  {current ? `${current.roleProfile.name} / ${difficultyLabel(current.difficulty as Difficulty)} / ${current.topic ?? interviewConfig.defaultTopic}` : '选择岗位画像后开始一次文本模拟面试'}
                 </p>
               </div>
               <span className="rounded-md border border-cyan/40 px-2 py-1 text-sm text-cyan">
-                {candidateAnswers}/{MAX_CANDIDATE_ANSWERS} 轮
+                {candidateAnswers}/{interviewConfig.maxTurns} 轮
               </span>
             </div>
 
@@ -286,8 +298,8 @@ export default function InterviewsPage() {
                   <div className="text-sm leading-6">{turn.content}</div>
                 </div>
               ))}
-              {!current && <InlineEmpty title="尚未开始面试" description="配置岗位、难度和主题后，开始一场 5 轮文本模拟面试。" />}
-              {current && reachedMaxAnswers && !completed && <InlineEmpty title="已完成 5 轮回答" description="本轮面试已达到默认轮数上限，可以结束并生成评分报告。" />}
+              {!current && <InlineEmpty title="尚未开始面试" description={`配置岗位、难度和主题后，开始一场 ${interviewConfig.maxTurns} 轮文本模拟面试。`} />}
+              {current && reachedMaxAnswers && !completed && <InlineEmpty title={`已完成 ${interviewConfig.maxTurns} 轮回答`} description="本轮面试已达到当前轮数上限，可以结束并生成评分报告。" />}
             </div>
 
             <div className="mt-5 space-y-3">
@@ -311,8 +323,8 @@ export default function InterviewsPage() {
                   </Button>
                 </div>
               </div>
-              {current && !completed && candidateAnswers < MIN_CANDIDATE_ANSWERS_FOR_REPORT && (
-                <p className="text-xs text-slate-500">至少完成 {MIN_CANDIDATE_ANSWERS_FOR_REPORT} 次回答后可以生成正式评分报告。</p>
+              {current && !completed && candidateAnswers < interviewConfig.minAnswersForReport && (
+                <p className="text-xs text-slate-500">至少完成 {interviewConfig.minAnswersForReport} 次回答后可以生成正式评分报告。</p>
               )}
             </div>
           </Panel>
@@ -324,6 +336,7 @@ export default function InterviewsPage() {
               updatingLearningItemId={updatingLearningItemId}
               onProgressChange={updateLearningProgress}
               onFocusedSessionCreated={handleFocusedSessionCreated}
+              focusedPracticeEnabled={interviewConfig.focusedPracticeEnabled}
             />
           ) : (
             <Panel>
@@ -344,12 +357,14 @@ function ReportPanel({
   session,
   updatingLearningItemId,
   onProgressChange,
-  onFocusedSessionCreated
+  onFocusedSessionCreated,
+  focusedPracticeEnabled
 }: {
   session: InterviewSession;
   updatingLearningItemId: string;
   onProgressChange: (learningItemId: string, status: ProgressStatus) => Promise<void>;
   onFocusedSessionCreated: (session: InterviewSession) => void;
+  focusedPracticeEnabled: boolean;
 }) {
   const report = session.report;
   if (!report) return null;
@@ -357,7 +372,7 @@ function ReportPanel({
   const strengths = (report.findings ?? []).filter((item) => item.type === 'STRENGTH');
   const weaknesses = (report.findings ?? []).filter((item) => item.type === 'WEAKNESS');
   const planItems = normalizePlanItems(report.improvementPlans?.[0]?.planItems, report.recommendations);
-  const canStartFocusedPractice = Boolean(report.id && (weaknesses.length || planItems.length));
+  const canStartFocusedPractice = Boolean(focusedPracticeEnabled && report.id && (weaknesses.length || planItems.length));
 
   return (
     <Panel>

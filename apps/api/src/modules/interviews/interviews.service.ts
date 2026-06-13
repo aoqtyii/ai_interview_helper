@@ -1,12 +1,14 @@
-import { BadGatewayException, BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { AssessmentFindingType, Difficulty, InterviewStatus, Prisma, RecordStatus, Speaker, UserRole } from '@prisma/client';
 import { AiGatewayService } from '../ai/ai-gateway.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 
-const MAX_CANDIDATE_ANSWERS = 5;
-const MIN_CANDIDATE_ANSWERS_FOR_REPORT = 2;
+const DEFAULT_MAX_CANDIDATE_ANSWERS = 5;
+const DEFAULT_MIN_CANDIDATE_ANSWERS_FOR_REPORT = 2;
 const ASSESSMENT_SCHEMA_VERSION = 2;
-const MAX_RECOMMENDED_RESOURCES_PER_PLAN_ITEM = 3;
+const DEFAULT_RECOMMENDED_RESOURCES_PER_PLAN_ITEM = 3;
+const DEFAULT_INTERVIEW_TOPIC = 'AI Agent 应用落地';
 const ASSESSMENT_DIMENSIONS = [
   { key: 'ai_llm_foundation', name: 'AI / LLM 基础理解' },
   { key: 'agent_rag_tooling_depth', name: 'Agent / RAG / 工具调用技术深度' },
@@ -56,20 +58,23 @@ type AssessmentReportPayload = {
 export class InterviewsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(AiGatewayService) private readonly ai: AiGatewayService
+    @Inject(AiGatewayService) private readonly ai: AiGatewayService,
+    @Optional() @Inject(SettingsService) private readonly settings?: SettingsService
   ) {}
 
   async create(userId: string, input: { roleProfileId: string; difficulty?: Difficulty; topic?: string }) {
+    const interviewConfig = await this.resolveInterviewConfig();
     const role = await this.prisma.roleProfile.findUniqueOrThrow({
       where: { id: input.roleProfileId },
       include: { skills: true }
     });
+    const topic = input.topic?.trim() || interviewConfig.defaultTopic;
 
     const firstQuestion = await this.ai.run({
       taskType: 'interviewer_turn',
       userId,
       system: '你是一名严格但支持性的 AI 岗位中文面试官。问题要贴近真实 AI 应用层岗位。',
-      input: `岗位：${role.name}\n主题：${input.topic ?? '综合能力'}\n技能：${role.skills.map((skill) => skill.name).join('、')}`
+      input: `岗位：${role.name}\n主题：${topic}\n技能：${role.skills.map((skill) => skill.name).join('、')}`
     });
 
     const session = await this.prisma.interviewSession.create({
@@ -77,7 +82,7 @@ export class InterviewsService {
         userId,
         roleProfileId: role.id,
         difficulty: input.difficulty ?? Difficulty.MID,
-        topic: input.topic,
+        topic,
         status: InterviewStatus.IN_PROGRESS,
         startedAt: new Date(),
         turns: {
@@ -111,7 +116,13 @@ export class InterviewsService {
     return this.withRecommendationReasons(session);
   }
 
+  async clientConfig() {
+    return this.resolveInterviewConfig();
+  }
+
   async createFocusedSession(userId: string, role: UserRole, reportId: string) {
+    const interviewConfig = await this.resolveInterviewConfig();
+    if (!interviewConfig.focusedPracticeEnabled) throw new BadRequestException('Focused practice is disabled');
     const report = await this.prisma.assessmentReport.findUnique({
       where: { id: reportId },
       include: {
@@ -171,14 +182,15 @@ export class InterviewsService {
   }
 
   async addTurn(userId: string, role: UserRole, sessionId: string, content: string) {
+    const interviewConfig = await this.resolveInterviewConfig();
     const session = await this.get(userId, role, sessionId);
     if (session.status !== InterviewStatus.IN_PROGRESS) throw new ForbiddenException('Session is not in progress');
     const candidateAnswerCount = this.countCandidateAnswers(session.turns);
-    if (candidateAnswerCount >= MAX_CANDIDATE_ANSWERS) {
+    if (candidateAnswerCount >= interviewConfig.maxTurns) {
       throw new ForbiddenException('Interview has reached the maximum answer rounds');
     }
 
-    if (candidateAnswerCount + 1 >= MAX_CANDIDATE_ANSWERS) {
+    if (candidateAnswerCount + 1 >= interviewConfig.maxTurns) {
       await this.prisma.interviewTurn.create({
         data: { sessionId, speaker: Speaker.CANDIDATE, content }
       });
@@ -210,12 +222,13 @@ export class InterviewsService {
   }
 
   async finish(userId: string, role: UserRole, sessionId: string) {
+    const interviewConfig = await this.resolveInterviewConfig();
     const session = await this.get(userId, role, sessionId);
     if (session.status === InterviewStatus.COMPLETED && session.report) {
       return session;
     }
-    if (this.countCandidateAnswers(session.turns) < MIN_CANDIDATE_ANSWERS_FOR_REPORT) {
-      throw new BadRequestException('At least 2 candidate answers are required before generating a report');
+    if (this.countCandidateAnswers(session.turns) < interviewConfig.minAnswersForReport) {
+      throw new BadRequestException(`At least ${interviewConfig.minAnswersForReport} candidate answers are required before generating a report`);
     }
 
     const transcript = session.turns.map((turn) => `${turn.speaker}: ${turn.content}`).join('\n');
@@ -481,48 +494,49 @@ export class InterviewsService {
   }
 
   private async matchLearningItems(roleProfileId: string, items: ImprovementPlanItemPayload[]) {
+    const learningConfig = await this.resolveLearningConfig();
     const matches = new Map<number, string[]>();
 
     for (const [index, item] of items.entries()) {
       const ids: string[] = [];
-      await this.collectLearningItemMatches(ids, {
+      await this.collectLearningItemMatches(ids, learningConfig.recommendationLimit, {
         status: RecordStatus.ACTIVE,
         dimensionKeys: { has: item.dimensionKey },
         ...(item.skillId ? { roleProfileId, skillId: item.skillId } : { id: '__skip__' })
       });
-      await this.collectLearningItemMatches(ids, {
+      await this.collectLearningItemMatches(ids, learningConfig.recommendationLimit, {
         status: RecordStatus.ACTIVE,
         roleProfileId,
         dimensionKeys: { has: item.dimensionKey }
       });
-      await this.collectLearningItemMatches(ids, {
+      await this.collectLearningItemMatches(ids, learningConfig.recommendationLimit, {
         status: RecordStatus.ACTIVE,
         dimensionKeys: { has: item.dimensionKey },
         skill: { roleProfileId }
       });
-      await this.collectLearningItemMatches(ids, {
+      await this.collectLearningItemMatches(ids, learningConfig.recommendationLimit, {
         status: RecordStatus.ACTIVE,
         roleProfileId: null,
         skillId: null,
         dimensionKeys: { has: item.dimensionKey }
       });
 
-      matches.set(index, ids.slice(0, MAX_RECOMMENDED_RESOURCES_PER_PLAN_ITEM));
+      matches.set(index, ids.slice(0, learningConfig.recommendationLimit));
     }
 
     return matches;
   }
 
-  private async collectLearningItemMatches(target: string[], where: Prisma.LearningItemWhereInput) {
-    if (target.length >= MAX_RECOMMENDED_RESOURCES_PER_PLAN_ITEM) return;
+  private async collectLearningItemMatches(target: string[], limit: number, where: Prisma.LearningItemWhereInput) {
+    if (target.length >= limit) return;
     const items = await this.prisma.learningItem.findMany({
       where,
       orderBy: [{ estimatedMinutes: 'asc' }, { createdAt: 'desc' }],
-      take: MAX_RECOMMENDED_RESOURCES_PER_PLAN_ITEM
+      take: limit
     });
 
     for (const item of items) {
-      if (target.length >= MAX_RECOMMENDED_RESOURCES_PER_PLAN_ITEM) return;
+      if (target.length >= limit) return;
       if (!target.includes(item.id)) target.push(item.id);
     }
   }
@@ -607,6 +621,26 @@ export class InterviewsService {
 
   private isScore(value: unknown): value is number {
     return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 100;
+  }
+
+  private async resolveInterviewConfig() {
+    return (
+      (await this.settings?.interviewConfig()) ?? {
+        maxTurns: DEFAULT_MAX_CANDIDATE_ANSWERS,
+        minAnswersForReport: DEFAULT_MIN_CANDIDATE_ANSWERS_FOR_REPORT,
+        defaultTopic: DEFAULT_INTERVIEW_TOPIC,
+        focusedPracticeEnabled: true
+      }
+    );
+  }
+
+  private async resolveLearningConfig() {
+    return (
+      (await this.settings?.learningConfig()) ?? {
+        recommendationLimit: DEFAULT_RECOMMENDED_RESOURCES_PER_PLAN_ITEM,
+        pendingLimit: 6
+      }
+    );
   }
 
   private countCandidateAnswers(turns: Array<{ speaker: Speaker }>) {

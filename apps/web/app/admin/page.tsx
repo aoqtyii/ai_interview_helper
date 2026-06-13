@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { DatabaseZap, Edit3, Play, Save } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
@@ -175,6 +176,9 @@ export default function AdminPage() {
           <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
             <Panel>
               <h2 className="text-lg font-semibold">{form.id ? '编辑学习资源' : '创建学习资源'}</h2>
+              <Link href="/admin/settings" className="mt-3 inline-flex rounded-md border border-cyan/40 px-3 py-2 text-sm text-cyan hover:bg-cyan/10">
+                打开系统配置
+              </Link>
               <div className="mt-4 grid gap-3">
                 <input className={inputClass()} value={form.title} onChange={(event) => setFormValue('title', event.target.value)} placeholder="标题" />
                 <textarea className={`${inputClass()} min-h-24`} value={form.description} onChange={(event) => setFormValue('description', event.target.value)} placeholder="描述" />

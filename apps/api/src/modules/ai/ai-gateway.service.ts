@@ -1,7 +1,8 @@
-import { BadGatewayException, Inject, Injectable } from '@nestjs/common';
+import { BadGatewayException, Inject, Injectable, Optional } from '@nestjs/common';
 import { AiRunStatus } from '@prisma/client';
 import { loadAppConfig } from '../../common/app-config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 
 type AiTaskType = 'interviewer_turn' | 'assessment_report' | 'learning_coach' | 'article_digest';
 
@@ -15,28 +16,31 @@ type AiRequest = {
 
 @Injectable()
 export class AiGatewayService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Optional() @Inject(SettingsService) private readonly settings?: SettingsService
+  ) {}
 
   async run(request: AiRequest) {
     const started = Date.now();
-    const config = loadAppConfig();
-    const provider = process.env.AI_PROVIDER ?? 'openai-compatible';
-    const model = process.env.AI_DEFAULT_MODEL ?? 'gpt-5.4-mini';
+    const config = await this.resolveAiConfig();
+    const provider = config.provider;
+    const model = config.defaultModel;
 
-    if (config.aiMockMode) {
+    if (config.mockMode) {
       const output = this.mockResponse(request);
       await this.logRun(request, provider, model, Date.now() - started, AiRunStatus.MOCKED, output);
       return output;
     }
 
-    if (!process.env.AI_API_KEY) {
+    if (!config.apiKey) {
       const message = 'AI_API_KEY is required when AI_MOCK_MODE is disabled';
       await this.logRun(request, provider, model, Date.now() - started, AiRunStatus.FAILED, undefined, message);
       throw new BadGatewayException(message);
     }
 
     try {
-      const output = await this.callOpenAiCompatible(request, model);
+      const output = await this.callOpenAiCompatible(request, config);
       await this.logRun(request, provider, model, Date.now() - started, AiRunStatus.SUCCESS, output);
       return output;
     } catch (error) {
@@ -46,16 +50,16 @@ export class AiGatewayService {
     }
   }
 
-  private async callOpenAiCompatible(request: AiRequest, model: string) {
-    const baseUrl = process.env.AI_BASE_URL ?? 'https://api.openai.com/v1';
+  private async callOpenAiCompatible(request: AiRequest, config: Awaited<ReturnType<AiGatewayService['resolveAiConfig']>>) {
+    const baseUrl = config.baseUrl;
     const response = await fetch(`${baseUrl}/responses`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${process.env.AI_API_KEY}`,
+        Authorization: `Bearer ${config.apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model,
+        model: config.defaultModel,
         input: [
           { role: 'system', content: request.system },
           { role: 'user', content: request.input }
@@ -66,6 +70,18 @@ export class AiGatewayService {
     if (!response.ok) throw new Error(`AI provider failed: ${response.status} ${await response.text()}`);
     const json = (await response.json()) as { output_text?: string };
     return json.output_text ?? JSON.stringify(json);
+  }
+
+  private async resolveAiConfig() {
+    if (this.settings) return this.settings.aiConfig();
+    const config = loadAppConfig();
+    return {
+      mockMode: config.aiMockMode,
+      provider: process.env.AI_PROVIDER ?? 'openai-compatible',
+      baseUrl: process.env.AI_BASE_URL ?? 'https://api.openai.com/v1',
+      apiKey: process.env.AI_API_KEY ?? '',
+      defaultModel: process.env.AI_DEFAULT_MODEL ?? 'gpt-5.4-mini'
+    };
   }
 
   private mockResponse(request: AiRequest) {

@@ -132,3 +132,34 @@ export type AiRunLog = {
   status: string;
   latencyMs: number;
 };
+
+export type AdminSettingsResponse = {
+  groups: AdminSettingGroup[];
+};
+
+export type AdminSettingGroup = {
+  key: 'ai' | 'interview' | 'learning';
+  title: string;
+  settings: AdminSettingItem[];
+};
+
+export type AdminSettingItem = {
+  key: string;
+  label: string;
+  description: string;
+  valueType: 'boolean' | 'number' | 'string' | 'secret';
+  isSecret: boolean;
+  value?: string | number | boolean;
+  configured: boolean;
+  masked?: string;
+  source: 'database' | 'env' | 'default';
+  min?: number;
+  max?: number;
+};
+
+export type InterviewConfig = {
+  maxTurns: number;
+  minAnswersForReport: number;
+  defaultTopic: string;
+  focusedPracticeEnabled: boolean;
+};

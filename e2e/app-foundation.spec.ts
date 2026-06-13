@@ -72,3 +72,13 @@ test('admin page surfaces API failures instead of hiding them', async ({ page })
 
   await expect(page.locator('main')).toContainText('API');
 });
+
+test('admin can open system settings', async ({ page }) => {
+  await login(page, 'admin@aih.local', 'admin123456');
+  await page.goto('/admin/settings');
+
+  await expect(page.locator('main')).toContainText('系统配置');
+  await expect(page.locator('main')).toContainText('AI 配置');
+  await expect(page.locator('main')).toContainText('面试配置');
+  await expect(page.locator('main')).toContainText('学习配置');
+});

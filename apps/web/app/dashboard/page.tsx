@@ -5,7 +5,7 @@ import { Panel } from '@/components/ui/panel';
 import { StatCard } from '@/components/dashboard/stat-card';
 import { EmptyState, ErrorState } from '@/components/ui/state';
 import { serverApi } from '@/lib/server-api';
-import type { Article, InterviewSession, LearningItem } from '@/lib/types';
+import type { Article, InterviewConfig, InterviewSession, LearningItem } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,11 +13,13 @@ export default async function DashboardPage() {
   let sessions: InterviewSession[];
   let pendingLearning: LearningItem[];
   let articles: Article[];
+  let interviewConfig: InterviewConfig;
   try {
-    [sessions, pendingLearning, articles] = await Promise.all([
+    [sessions, pendingLearning, articles, interviewConfig] = await Promise.all([
       serverApi<InterviewSession[]>('/interviews/sessions'),
       serverApi<LearningItem[]>('/learning/pending'),
-      serverApi<Article[]>('/intelligence/articles')
+      serverApi<Article[]>('/intelligence/articles'),
+      serverApi<InterviewConfig>('/interviews/config')
     ]);
   } catch (error) {
     return (
@@ -28,7 +30,7 @@ export default async function DashboardPage() {
   }
 
   const weaknesses = latestWeaknesses(sessions);
-  const focusedReport = latestFocusedPracticeReport(sessions);
+  const focusedReport = interviewConfig.focusedPracticeEnabled ? latestFocusedPracticeReport(sessions) : null;
 
   return (
     <AppShell>

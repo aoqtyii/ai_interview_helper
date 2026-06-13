@@ -36,6 +36,7 @@ services:
       API_PORT: 4000
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       JWT_SECRET: ${JWT_SECRET:-}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-dev-local-settings-key-change-me}
       COOKIE_NAME: ${COOKIE_NAME:-aih_session}
       AI_PROVIDER: ${AI_PROVIDER:-openai-compatible}
       AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
@@ -68,6 +69,7 @@ services:
       DATABASE_URL: postgresql://aih:aih@postgres:5432/aih?schema=public
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-dev-local-settings-key-change-me}
       AI_PROVIDER: ${AI_PROVIDER:-openai-compatible}
       AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
       AI_API_KEY: ${AI_API_KEY:-}

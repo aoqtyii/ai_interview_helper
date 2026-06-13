@@ -1,10 +1,14 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InterviewStatus, ProgressStatus, RecordStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class LearningService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Optional() @Inject(SettingsService) private readonly settings?: SettingsService
+  ) {}
 
   async items(userId: string) {
     const items = await this.prisma.learningItem.findMany({
@@ -34,6 +38,7 @@ export class LearningService {
   }
 
   async pending(userId: string) {
+    const learningConfig = await this.resolveLearningConfig();
     const [reportItems, recommendedItems] = await Promise.all([this.latestReportRecommendedItems(userId), this.recommendations(userId)]);
     const byId = new Map<string, (typeof recommendedItems)[number]>();
 
@@ -42,7 +47,7 @@ export class LearningService {
     }
 
     return Array.from(byId.values())
-      .slice(0, 6)
+      .slice(0, learningConfig.pendingLimit)
       .map((item) => this.withLearningRecommendationReasons(item));
   }
 
@@ -174,5 +179,14 @@ export class LearningService {
     if (planItem?.title) reasons.push(`关联补弱任务：${planItem.title}`);
 
     return Array.from(new Set(reasons)).slice(0, 3).join('，') || '根据最近面试报告推荐';
+  }
+
+  private async resolveLearningConfig() {
+    return (
+      (await this.settings?.learningConfig()) ?? {
+        recommendationLimit: 3,
+        pendingLimit: 6
+      }
+    );
   }
 }

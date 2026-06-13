@@ -387,6 +387,20 @@ model PromptTemplate {
   @@unique([taskType, version])
 }
 
+model SystemSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  valueType   String
+  isSecret    Boolean  @default(false)
+  description String   @default("")
+  updatedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isSecret])
+}
+
 model AiRunLog {
   id            String      @id @default(cuid())
   userId        String?
