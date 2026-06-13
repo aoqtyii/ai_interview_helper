@@ -6,17 +6,18 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class LearningService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  items(userId: string) {
-    return this.prisma.learningItem.findMany({
+  async items(userId: string) {
+    const items = await this.prisma.learningItem.findMany({
       where: { status: RecordStatus.ACTIVE },
       include: this.learningItemInclude(userId),
       orderBy: [{ difficulty: 'asc' }, { estimatedMinutes: 'asc' }, { createdAt: 'desc' }]
     });
+    return items.map((item) => this.withLearningRecommendationReasons(item));
   }
 
   async recommendations(userId: string) {
     const profile = await this.prisma.userProfile.findUnique({ where: { userId } });
-    return this.prisma.learningItem.findMany({
+    const items = await this.prisma.learningItem.findMany({
       where: {
         status: RecordStatus.ACTIVE,
         ...(profile?.targetRoleId
@@ -29,6 +30,7 @@ export class LearningService {
       orderBy: [{ estimatedMinutes: 'asc' }, { createdAt: 'desc' }],
       take: 12
     });
+    return items.map((item) => this.withLearningRecommendationReasons(item));
   }
 
   async pending(userId: string) {
@@ -39,7 +41,9 @@ export class LearningService {
       if (item.progress[0]?.status !== ProgressStatus.DONE && !byId.has(item.id)) byId.set(item.id, item);
     }
 
-    return Array.from(byId.values()).slice(0, 6);
+    return Array.from(byId.values())
+      .slice(0, 6)
+      .map((item) => this.withLearningRecommendationReasons(item));
   }
 
   async progress(userId: string, input: { learningItemId: string; status: ProgressStatus; score?: number; note?: string; reflection?: string }) {
@@ -49,7 +53,14 @@ export class LearningService {
     });
     if (!learningItem) throw new NotFoundException('Learning item not found');
 
-    const completedAt = input.status === ProgressStatus.DONE ? new Date() : null;
+    const existing = await this.prisma.learningProgress.findUnique({
+      where: { userId_learningItemId: { userId, learningItemId: input.learningItemId } },
+      select: { completedAt: true }
+    });
+    const completedAt = input.status === ProgressStatus.DONE ? existing?.completedAt ?? new Date() : null;
+    const note = input.note === undefined ? undefined : input.note.trim();
+    const reflection = input.reflection === undefined ? undefined : input.reflection.trim();
+
     return this.prisma.learningProgress.upsert({
       where: { userId_learningItemId: { userId, learningItemId: input.learningItemId } },
       create: {
@@ -58,15 +69,15 @@ export class LearningService {
         status: input.status,
         score: input.score,
         completedAt,
-        note: input.note ?? '',
-        reflection: input.reflection ?? ''
+        note: note ?? '',
+        reflection: reflection ?? ''
       },
       update: {
         status: input.status,
         score: input.score,
         completedAt,
-        note: input.note,
-        reflection: input.reflection
+        note,
+        reflection
       }
     });
   }
@@ -130,5 +141,38 @@ export class LearningService {
         .map((resource) => resource.learningItem)
         .filter((item) => item.status === RecordStatus.ACTIVE) ?? []
     );
+  }
+
+  private withLearningRecommendationReasons<
+    T extends {
+      roleProfile?: { name?: string } | null;
+      skill?: { name?: string } | null;
+      dimensionKeys?: string[];
+      recommendedPlanItems?: Array<Record<string, unknown>>;
+    }
+  >(item: T): T {
+    if (!item.recommendedPlanItems?.length) return item;
+    return {
+      ...item,
+      recommendedPlanItems: item.recommendedPlanItems.map((resource) => ({
+        ...resource,
+        reason: this.learningRecommendationReason(item, resource)
+      }))
+    };
+  }
+
+  private learningRecommendationReason(item: { roleProfile?: { name?: string } | null; skill?: { name?: string } | null; dimensionKeys?: string[] }, resource: Record<string, unknown>) {
+    const planItem = resource.planItem as { title?: string; dimensionKey?: string; plan?: { report?: { session?: { roleProfile?: { name?: string } } } } } | undefined;
+    const reasons: string[] = [];
+
+    if (planItem?.dimensionKey && item.dimensionKeys?.includes(planItem.dimensionKey)) reasons.push('匹配本次短板维度');
+    if (item.skill?.name) reasons.push(`匹配技能：${item.skill.name}`);
+    if (item.roleProfile?.name ?? planItem?.plan?.report?.session?.roleProfile?.name) {
+      reasons.push(`匹配岗位：${item.roleProfile?.name ?? planItem?.plan?.report?.session?.roleProfile?.name}`);
+    }
+    if (!item.roleProfile && !item.skill) reasons.push('通用补弱资源');
+    if (planItem?.title) reasons.push(`关联补弱任务：${planItem.title}`);
+
+    return Array.from(new Set(reasons)).slice(0, 3).join('，') || '根据最近面试报告推荐';
   }
 }

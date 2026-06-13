@@ -83,8 +83,7 @@ export function ErrorState({
     <Panel className="border-red-400/40 bg-red-950/20">
       <h2 className="text-lg font-semibold text-red-100">{title ?? (unauthorized ? '需要登录' : '数据加载失败')}</h2>
       <p className="mt-2 text-sm text-red-100/75">
-        {description ??
-          (unauthorized ? '请先登录后再访问该工作区。' : '当前无法连接到后端服务，页面不会展示演示数据来掩盖错误。')}
+        {description ?? (unauthorized ? '请先登录后再访问该工作区。' : '当前无法连接到后端服务，页面不会展示演示数据来掩盖错误。')}
       </p>
       {error instanceof ApiError && error.requestId && <p className="mt-2 text-xs text-red-100/55">Request ID: {error.requestId}</p>}
       {unauthorized && (

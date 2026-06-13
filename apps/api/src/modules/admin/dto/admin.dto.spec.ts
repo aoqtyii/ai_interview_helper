@@ -1,6 +1,6 @@
 import { validateSync } from 'class-validator';
 import { describe, expect, it } from 'vitest';
-import { CreateInterviewQuestionDto, CreateRoleProfileDto, CreateSourceFeedDto } from './admin.dto';
+import { CreateInterviewQuestionDto, CreateLearningItemDto, CreateRoleProfileDto, CreateSourceFeedDto } from './admin.dto';
 
 describe('CreateSourceFeedDto', () => {
   it('rejects non-url feed values', () => {
@@ -51,5 +51,21 @@ describe('CreateInterviewQuestionDto', () => {
     dto.rubric = {};
 
     expect(validateSync(dto).length).toBeGreaterThan(0);
+  });
+});
+
+describe('CreateLearningItemDto', () => {
+  it('allows optional URL and relation fields to be omitted or cleared', () => {
+    const dto = new CreateLearningItemDto();
+    dto.title = 'Agent RAG practice';
+    dto.description = 'Build and review a small retrieval workflow.';
+    dto.type = 'PROJECT' as never;
+    dto.contentUrl = null;
+    dto.roleProfileId = null;
+    dto.skillId = null;
+    dto.difficulty = 'MID' as never;
+    dto.estimatedMinutes = 60;
+
+    expect(validateSync(dto)).toHaveLength(0);
   });
 });

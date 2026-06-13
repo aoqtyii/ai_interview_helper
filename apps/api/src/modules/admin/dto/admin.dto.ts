@@ -1,5 +1,5 @@
 import { Difficulty, FeedType, LearningType, Prisma, RecordStatus } from '@prisma/client';
-import { IsArray, IsEnum, IsInt, IsObject, IsOptional, IsString, IsUrl, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsArray, IsEnum, IsInt, IsObject, IsOptional, IsString, IsUrl, Matches, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 
 export class CreateRoleProfileDto {
   @IsString()
@@ -84,22 +84,22 @@ export class CreateLearningItemDto {
   @MaxLength(2000)
   description!: string;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null && value !== '')
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   @MaxLength(2048)
-  contentUrl?: string;
+  contentUrl?: string | null;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null && value !== '')
   @IsString()
   @Matches(/\S/)
   @MaxLength(128)
-  roleProfileId?: string;
+  roleProfileId?: string | null;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null && value !== '')
   @IsString()
   @Matches(/\S/)
   @MaxLength(128)
-  skillId?: string;
+  skillId?: string | null;
 
   @IsEnum(Difficulty)
   difficulty!: Difficulty;
@@ -145,22 +145,22 @@ export class UpdateLearningItemDto {
   @MaxLength(2000)
   description?: string;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null && value !== '')
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   @MaxLength(2048)
-  contentUrl?: string;
+  contentUrl?: string | null;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null && value !== '')
   @IsString()
   @Matches(/\S/)
   @MaxLength(128)
-  roleProfileId?: string;
+  roleProfileId?: string | null;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null && value !== '')
   @IsString()
   @Matches(/\S/)
   @MaxLength(128)
-  skillId?: string;
+  skillId?: string | null;
 
   @IsOptional()
   @IsEnum(Difficulty)

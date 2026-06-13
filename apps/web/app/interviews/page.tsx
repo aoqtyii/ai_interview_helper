@@ -388,9 +388,10 @@ function ReportPanel({
                   {resources.length ? (
                     resources.map((resource) => (
                       <LearningResourceCard
-                        key={resource.id}
-                        resource={resource}
-                        updating={updatingLearningItemId === resource.id}
+                        key={resource.learningItem.id}
+                        resource={resource.learningItem}
+                        reason={resource.reason}
+                        updating={updatingLearningItemId === resource.learningItem.id}
                         onProgressChange={onProgressChange}
                       />
                     ))
@@ -417,13 +418,17 @@ function ReportPanel({
 
 function LearningResourceCard({
   resource,
+  reason,
   updating,
   onProgressChange
 }: {
   resource: LearningItem;
+  reason?: string;
   updating: boolean;
   onProgressChange: (learningItemId: string, status: ProgressStatus) => Promise<void>;
 }) {
+  const progress = resource.progress?.[0];
+
   return (
     <div className="rounded-md border border-cyan/25 bg-cyan/5 p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -432,6 +437,8 @@ function LearningResourceCard({
           <div className="mt-1 text-xs text-slate-400">
             {learningTypeLabel(resource.type)} / {resource.estimatedMinutes} 分钟{resource.skill?.name ? ` / ${resource.skill.name}` : ''}
           </div>
+          {reason && <div className="mt-2 text-xs leading-5 text-cyan">{reason}</div>}
+          {progress?.completedAt && <div className="mt-1 text-xs text-slate-500">完成于 {formatDate(progress.completedAt)}</div>}
         </div>
         {resource.contentUrl && (
           <a href={resource.contentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-cyan hover:text-acid">
@@ -477,13 +484,27 @@ function FindingList({ title, items, empty }: { title: string; items: string[]; 
 }
 
 function recommendedLearningItems(item: ImprovementPlanItem) {
-  const resources = (item.recommendedResources ?? []).map((resource) => resource.learningItem);
-  if (!resources.length && item.learningItem) resources.push(item.learningItem);
-  return Array.from(new Map(resources.map((resource) => [resource.id, resource])).values()).slice(0, 3);
+  const resources = item.recommendedResources ?? [];
+  if (!resources.length && item.learningItem) {
+    return [{ id: item.learningItem.id, position: 1, learningItem: item.learningItem, reason: fallbackRecommendationReason(item, item.learningItem) }];
+  }
+  return Array.from(new Map(resources.map((resource) => [resource.learningItem.id, resource])).values()).slice(0, 3);
 }
 
 function currentProgress(item: LearningItem): ProgressStatus {
   return item.progress?.[0]?.status ?? 'TODO';
+}
+
+function fallbackRecommendationReason(planItem: ImprovementPlanItem, resource: LearningItem) {
+  const reasons: string[] = [];
+  if (resource.dimensionKeys?.includes(planItem.dimensionKey)) reasons.push('匹配本次短板维度');
+  if (resource.skill?.name) reasons.push(`匹配技能：${resource.skill.name}`);
+  if (resource.roleProfile?.name) reasons.push(`匹配岗位：${resource.roleProfile.name}`);
+  return reasons.join('，') || '根据本次面试短板推荐';
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 }
 
 function applyLearningProgress(session: InterviewSession, learningItemId: string, progress: LearningProgress): InterviewSession {

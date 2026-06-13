@@ -74,6 +74,7 @@ export type ImprovementPlanItem = {
 export type ImprovementPlanItemLearningResource = {
   id: string;
   position: number;
+  reason?: string;
   learningItem: LearningItem;
 };
 
@@ -92,8 +93,10 @@ export type LearningItem = {
   skill?: { id?: string; name: string; roleProfileId?: string } | null;
   progress?: LearningProgress[];
   recommendedPlanItems?: Array<{
+    reason?: string;
     planItem: {
       title: string;
+      dimensionKey?: string;
       plan: {
         report: {
           session: { roleProfile?: { name: string } };

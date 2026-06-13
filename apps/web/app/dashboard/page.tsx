@@ -95,7 +95,9 @@ export default async function DashboardPage() {
                   <div className="mt-1 text-xs text-slate-400">
                     {item.estimatedMinutes} 分钟{item.roleProfile?.name ? ` / ${item.roleProfile.name}` : ''}
                   </div>
-                  {item.recommendedPlanItems?.length ? <div className="mt-2 text-xs text-cyan">来自最近面试报告推荐</div> : null}
+                  {item.recommendedPlanItems?.length ? (
+                    <div className="mt-2 text-xs leading-5 text-cyan">{item.recommendedPlanItems[0]?.reason ?? '来自最近面试报告推荐'}</div>
+                  ) : null}
                 </div>
               ))
             ) : (

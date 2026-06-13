@@ -47,7 +47,7 @@ export class AdminController {
 
   @Post('learning-items')
   async createLearningItem(@Body() body: CreateLearningItemDto) {
-    const data = (await this.toLearningItemData(body)) as Prisma.LearningItemUncheckedCreateInput;
+    const data = (await this.toLearningItemData(body, false)) as Prisma.LearningItemUncheckedCreateInput;
     return this.prisma.learningItem.create({
       data,
       include: { roleProfile: true, skill: true }
@@ -56,7 +56,7 @@ export class AdminController {
 
   @Patch('learning-items/:id')
   async updateLearningItem(@Param('id') id: string, @Body() body: UpdateLearningItemDto) {
-    const data = (await this.toLearningItemData(body)) as Prisma.LearningItemUncheckedUpdateInput;
+    const data = (await this.toLearningItemData(body, true)) as Prisma.LearningItemUncheckedUpdateInput;
     return this.prisma.learningItem.update({
       where: { id },
       data,
@@ -74,17 +74,27 @@ export class AdminController {
     return this.prisma.aiRunLog.findMany({ orderBy: { createdAt: 'desc' }, take: 100 });
   }
 
-  private async toLearningItemData(body: CreateLearningItemDto | UpdateLearningItemDto): Promise<Prisma.LearningItemUncheckedCreateInput | Prisma.LearningItemUncheckedUpdateInput> {
-    const relation = await this.resolveLearningRelation(body.roleProfileId, body.skillId);
-    const contentUrl = body.contentUrl ? await assertSafeHttpUrl(body.contentUrl) : undefined;
+  private async toLearningItemData(
+    body: CreateLearningItemDto | UpdateLearningItemDto,
+    allowClear: boolean
+  ): Promise<Prisma.LearningItemUncheckedCreateInput | Prisma.LearningItemUncheckedUpdateInput> {
+    const hasContentUrl = this.hasField(body, 'contentUrl');
+    const hasRoleProfileId = this.hasField(body, 'roleProfileId');
+    const hasSkillId = this.hasField(body, 'skillId');
+    const rawRoleProfileId = this.cleanOptionalString(body.roleProfileId);
+    const rawSkillId = this.cleanOptionalString(body.skillId);
+    const relation = await this.resolveLearningRelation(rawRoleProfileId, rawSkillId);
+    const rawContentUrl = this.cleanOptionalString(body.contentUrl);
+    const contentUrl = rawContentUrl ? await assertSafeHttpUrl(rawContentUrl) : allowClear && hasContentUrl ? null : undefined;
+    const shouldUpdateRelation = !allowClear || hasRoleProfileId || hasSkillId;
 
     return {
       type: body.type,
       title: body.title?.trim(),
       description: body.description?.trim(),
       contentUrl,
-      roleProfileId: relation.roleProfileId,
-      skillId: relation.skillId,
+      roleProfileId: shouldUpdateRelation ? relation.roleProfileId ?? null : undefined,
+      skillId: shouldUpdateRelation ? relation.skillId ?? null : undefined,
       difficulty: body.difficulty,
       estimatedMinutes: body.estimatedMinutes,
       tags: body.tags ? this.cleanStringList(body.tags) : undefined,
@@ -115,5 +125,15 @@ export class AdminController {
 
   private cleanStringList(items: string[]) {
     return Array.from(new Set(items.map((item) => item.trim()).filter(Boolean))).slice(0, 20);
+  }
+
+  private cleanOptionalString(value: string | null | undefined) {
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    return trimmed || undefined;
+  }
+
+  private hasField<T extends object>(body: T, key: keyof T) {
+    return Object.prototype.hasOwnProperty.call(body, key);
   }
 }

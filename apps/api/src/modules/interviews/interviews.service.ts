@@ -92,12 +92,13 @@ export class InterviewsService {
     return this.get(userId, UserRole.USER, session.id);
   }
 
-  list(userId: string, role: UserRole) {
-    return this.prisma.interviewSession.findMany({
+  async list(userId: string, role: UserRole) {
+    const sessions = await this.prisma.interviewSession.findMany({
       where: role === UserRole.ADMIN ? undefined : { userId },
       include: { roleProfile: true, report: this.reportInclude(userId), turns: { take: 1, orderBy: { createdAt: 'desc' } } },
       orderBy: { createdAt: 'desc' }
     });
+    return sessions.map((session) => this.withRecommendationReasons(session));
   }
 
   async get(userId: string, role: UserRole, sessionId: string) {
@@ -107,7 +108,7 @@ export class InterviewsService {
     });
     if (!session) throw new NotFoundException('Interview session not found');
     if (role !== UserRole.ADMIN && session.userId !== userId) throw new ForbiddenException('Cannot access this session');
-    return session;
+    return this.withRecommendationReasons(session);
   }
 
   async addTurn(userId: string, role: UserRole, sessionId: string, content: string) {
@@ -294,6 +295,63 @@ export class InterviewsService {
         }
       }
     };
+  }
+
+  private withRecommendationReasons<T extends { roleProfile?: { id?: string; name?: string } | null; report?: unknown }>(session: T): T {
+    const report = session.report as
+      | {
+          improvementPlans?: Array<{
+            planItems?: Array<{
+              dimensionKey?: string;
+              skillId?: string | null;
+              skill?: { id?: string; name?: string } | null;
+              recommendedResources?: Array<{ learningItem?: Record<string, unknown>; reason?: string }>;
+            }>;
+          }>;
+        }
+      | null
+      | undefined;
+
+    if (!report?.improvementPlans?.length) return session;
+
+    return {
+      ...session,
+      report: {
+        ...report,
+        improvementPlans: report.improvementPlans.map((plan) => ({
+          ...plan,
+          planItems: plan.planItems?.map((item) => ({
+            ...item,
+            recommendedResources: item.recommendedResources?.map((resource) => ({
+              ...resource,
+              reason: this.reportRecommendationReason(session.roleProfile, item, resource.learningItem)
+            }))
+          }))
+        }))
+      }
+    };
+  }
+
+  private reportRecommendationReason(
+    roleProfile: { id?: string; name?: string } | null | undefined,
+    planItem: { dimensionKey?: string; skillId?: string | null; skill?: { id?: string; name?: string } | null },
+    learningItem?: Record<string, unknown>
+  ) {
+    const reasons: string[] = [];
+    const dimensionKeys = Array.isArray(learningItem?.dimensionKeys) ? learningItem.dimensionKeys : [];
+    const itemSkill = learningItem?.skill as { id?: string; name?: string } | null | undefined;
+    const itemRole = learningItem?.roleProfile as { id?: string; name?: string } | null | undefined;
+    const itemRoleId = typeof learningItem?.roleProfileId === 'string' ? learningItem.roleProfileId : itemRole?.id;
+    const itemSkillId = typeof learningItem?.skillId === 'string' ? learningItem.skillId : itemSkill?.id;
+
+    if (planItem.dimensionKey && dimensionKeys.includes(planItem.dimensionKey)) reasons.push('匹配本次短板维度');
+    if ((planItem.skillId && itemSkillId === planItem.skillId) || (!planItem.skillId && itemSkill?.name)) {
+      reasons.push(`匹配技能：${itemSkill?.name ?? '当前短板技能'}`);
+    }
+    if (roleProfile?.id && itemRoleId === roleProfile.id) reasons.push(`匹配岗位：${roleProfile.name ?? '当前岗位'}`);
+    if (!itemRoleId && !itemSkillId) reasons.push('通用补弱资源');
+
+    return Array.from(new Set(reasons)).slice(0, 3).join('，') || '根据本次面试短板推荐';
   }
 
   private parseReport(raw: string): AssessmentReportPayload {

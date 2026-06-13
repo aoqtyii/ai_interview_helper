@@ -113,6 +113,13 @@ export default function AdminPage() {
   }
 
   async function saveLearningItem() {
+    const validationError = validateLearningForm(form);
+    if (validationError) {
+      setError(validationError);
+      setMessage('');
+      return;
+    }
+
     setSaving(true);
     setError('');
     setMessage('');
@@ -246,6 +253,20 @@ export default function AdminPage() {
                         <div className="mt-1 text-xs text-slate-400">
                           {learningTypeLabel(item.type)} / {statusLabel(item.status)} / {item.estimatedMinutes} 分钟
                         </div>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-400">
+                          {item.roleProfile?.name && <span className="rounded-md border border-line px-2 py-1">{item.roleProfile.name}</span>}
+                          {item.skill?.name && <span className="rounded-md border border-line px-2 py-1">{item.skill.name}</span>}
+                          {(item.dimensionKeys ?? []).map((dimensionKey) => (
+                            <span key={dimensionKey} className="rounded-md bg-cyan/10 px-2 py-1 text-cyan">
+                              {dimensionLabel(dimensionKey)}
+                            </span>
+                          ))}
+                          {(item.tags ?? []).map((tag) => (
+                            <span key={tag} className="rounded-md bg-white/5 px-2 py-1">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
                         <div className="mt-2 text-sm leading-6 text-slate-400">{item.description}</div>
                       </div>
                       <Button variant="ghost" className="h-8 px-3" onClick={() => editLearningItem(item)}>
@@ -320,15 +341,23 @@ function buildLearningPayload(form: LearningForm) {
     title: form.title,
     description: form.description,
     type: form.type,
-    contentUrl: form.contentUrl.trim() || undefined,
-    roleProfileId: form.roleProfileId || undefined,
-    skillId: form.skillId || undefined,
+    contentUrl: form.contentUrl.trim() || null,
+    roleProfileId: form.roleProfileId || null,
+    skillId: form.skillId || null,
     difficulty: form.difficulty,
     estimatedMinutes: Number.parseInt(form.estimatedMinutes, 10),
     tags: splitList(form.tags),
     dimensionKeys: splitList(form.dimensionKeys),
     status: form.status
   };
+}
+
+function validateLearningForm(form: LearningForm) {
+  if (!form.title.trim()) return '请填写学习资源标题。';
+  if (!form.description.trim()) return '请填写学习资源描述。';
+  const estimatedMinutes = Number.parseInt(form.estimatedMinutes, 10);
+  if (!Number.isInteger(estimatedMinutes) || estimatedMinutes < 1 || estimatedMinutes > 2000) return '预计学习时间必须是 1 到 2000 之间的整数。';
+  return '';
 }
 
 function splitList(value: string) {
@@ -364,4 +393,8 @@ function statusLabel(status?: LearningItem['status']) {
   if (status === 'DRAFT') return '草稿';
   if (status === 'ARCHIVED') return '归档';
   return '未知';
+}
+
+function dimensionLabel(value: string) {
+  return dimensionOptions.find((item) => item.key === value)?.label ?? value;
 }
