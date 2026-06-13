@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { FocusedPracticeButton } from '@/components/interview/focused-practice-button';
 import { AppShell } from '@/components/layout/app-shell';
 import { Panel } from '@/components/ui/panel';
 import { StatCard } from '@/components/dashboard/stat-card';
@@ -27,6 +28,7 @@ export default async function DashboardPage() {
   }
 
   const weaknesses = latestWeaknesses(sessions);
+  const focusedReport = latestFocusedPracticeReport(sessions);
 
   return (
     <AppShell>
@@ -88,8 +90,18 @@ export default async function DashboardPage() {
             </Link>
           </div>
           <div className="space-y-3">
+            {focusedReport && (
+              <div className="rounded-md border border-acid/30 bg-acid/10 p-3">
+                <div className="text-sm font-medium text-acid">优先专项训练</div>
+                <div className="mt-1 text-xs leading-5 text-slate-300">{focusedReport.summary}</div>
+                <div className="mt-3">
+                  <FocusedPracticeButton reportId={focusedReport.id} compact />
+                </div>
+              </div>
+            )}
+
             {pendingLearning.length ? (
-              pendingLearning.slice(0, 4).map((item) => (
+              pendingLearning.slice(0, focusedReport ? 3 : 4).map((item) => (
                 <div key={item.id} className="rounded-md border border-line bg-white/[0.03] p-3">
                   <div className="text-sm font-medium">{item.title}</div>
                   <div className="mt-1 text-xs text-slate-400">
@@ -100,11 +112,9 @@ export default async function DashboardPage() {
                   ) : null}
                 </div>
               ))
-            ) : (
-              <div className="rounded-md border border-dashed border-line bg-white/[0.02] p-4 text-sm text-slate-400">
-                暂无待完成补弱任务。
-              </div>
-            )}
+            ) : !focusedReport ? (
+              <div className="rounded-md border border-dashed border-line bg-white/[0.02] p-4 text-sm text-slate-400">暂无待完成补弱任务。</div>
+            ) : null}
           </div>
         </Panel>
       </div>
@@ -129,5 +139,25 @@ function latestDimensions(sessions: InterviewSession[]) {
 
 function latestWeaknesses(sessions: InterviewSession[]) {
   const report = sessions.find((session) => session.report)?.report;
-  return (report?.findings ?? []).filter((item) => item.type === 'WEAKNESS').slice(0, 3).map((item) => item.content);
+  return (report?.findings ?? [])
+    .filter((item) => item.type === 'WEAKNESS')
+    .slice(0, 3)
+    .map((item) => item.content);
+}
+
+function latestFocusedPracticeReport(sessions: InterviewSession[]) {
+  const report = sessions.find((session) => hasFocusedPracticeContext(session))?.report;
+  if (!report) return null;
+  const planItem = report.improvementPlans?.[0]?.planItems?.[0];
+  const weakness = report.findings?.find((item) => item.type === 'WEAKNESS')?.content;
+  return {
+    id: report.id,
+    summary: planItem?.title ?? weakness ?? report.nextPractice ?? '基于最近一次面试短板启动专项训练。'
+  };
+}
+
+function hasFocusedPracticeContext(session: InterviewSession) {
+  const report = session.report;
+  if (!report) return false;
+  return Boolean(report.improvementPlans?.some((plan) => plan.planItems?.length) || report.findings?.some((item) => item.type === 'WEAKNESS'));
 }

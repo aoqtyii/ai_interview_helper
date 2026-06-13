@@ -1,5 +1,5 @@
-import { BadGatewayException } from '@nestjs/common';
-import { Difficulty, InterviewStatus, Speaker, UserRole } from '@prisma/client';
+import { BadGatewayException, ForbiddenException } from '@nestjs/common';
+import { AssessmentFindingType, Difficulty, InterviewStatus, Speaker, UserRole } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 import { InterviewsService } from './interviews.service';
 
@@ -122,6 +122,63 @@ describe('InterviewsService', () => {
     expect(prisma.assessmentReport.upsert).not.toHaveBeenCalled();
     expect(prisma.improvementPlan.upsert).not.toHaveBeenCalled();
     expect(prisma.interviewSession.update).not.toHaveBeenCalled();
+  });
+
+  it('creates a focused practice session from the user own report', async () => {
+    const focusedSession = buildFocusedSession();
+    const prisma = {
+      assessmentReport: {
+        findUnique: vi.fn().mockResolvedValue(buildReportForFocusedPractice({ userId: 'user-1' }))
+      },
+      interviewSession: {
+        create: vi.fn().mockResolvedValue({ id: 'focused-session-1' }),
+        findUnique: vi.fn().mockResolvedValue(focusedSession)
+      }
+    };
+    const ai = {
+      run: vi.fn().mockResolvedValue('focused opening question')
+    };
+    const service = new InterviewsService(prisma as never, ai as never);
+
+    await expect(service.createFocusedSession('user-1', UserRole.USER, 'report-1')).resolves.toEqual(focusedSession);
+
+    expect(ai.run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskType: 'interviewer_turn',
+        userId: 'user-1',
+        input: expect.stringContaining('主要短板')
+      })
+    );
+    expect(prisma.interviewSession.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          userId: 'user-1',
+          roleProfileId: 'role-1',
+          topic: expect.stringContaining('专项训练'),
+          turns: { create: { speaker: Speaker.INTERVIEWER, content: 'focused opening question' } }
+        })
+      })
+    );
+  });
+
+  it('rejects focused practice creation for reports owned by another user', async () => {
+    const prisma = {
+      assessmentReport: {
+        findUnique: vi.fn().mockResolvedValue(buildReportForFocusedPractice({ userId: 'owner-user' }))
+      },
+      interviewSession: {
+        create: vi.fn()
+      }
+    };
+    const ai = {
+      run: vi.fn()
+    };
+    const service = new InterviewsService(prisma as never, ai as never);
+
+    await expect(service.createFocusedSession('other-user', UserRole.USER, 'report-1')).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(ai.run).not.toHaveBeenCalled();
+    expect(prisma.interviewSession.create).not.toHaveBeenCalled();
   });
 
   it('requires at least two candidate answers before generating a report', async () => {
@@ -312,6 +369,43 @@ function buildSessionWithCandidateAnswers(candidateAnswers: number) {
       createdAt: new Date()
     })),
     report: null
+  };
+}
+
+function buildFocusedSession() {
+  return {
+    ...buildSessionWithCandidateAnswers(0),
+    id: 'focused-session-1',
+    status: InterviewStatus.IN_PROGRESS,
+    topic: '专项训练：Improve metrics depth',
+    turns: [{ id: 'turn-1', sessionId: 'focused-session-1', speaker: Speaker.INTERVIEWER, content: 'focused opening question', metadata: {}, createdAt: new Date() }]
+  };
+}
+
+function buildReportForFocusedPractice({ userId }: { userId: string }) {
+  return {
+    id: 'report-1',
+    nextPractice: 'Practice Agent evaluation.',
+    session: {
+      ...buildSessionWithCandidateAnswers(2),
+      userId,
+      roleProfileId: 'role-1',
+      roleProfile: { id: 'role-1', name: 'AI Agent Developer', skills: [{ id: 'skill-1', name: 'Agent evaluation' }] }
+    },
+    findings: [{ type: AssessmentFindingType.WEAKNESS, content: 'Metrics need depth.', position: 1 }],
+    improvementPlans: [
+      {
+        planItems: [
+          {
+            title: 'Improve metrics depth',
+            weakness: 'Metrics need depth.',
+            practiceMethod: 'Write offline and online metrics for an Agent scenario.',
+            dimensionKey: 'evaluation_metrics_risk',
+            skill: { id: 'skill-1', name: 'Agent evaluation' }
+          }
+        ]
+      }
+    ]
   };
 }
 

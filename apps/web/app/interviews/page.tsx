@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Bot, ExternalLink, Send, SquareCheckBig } from 'lucide-react';
+import { FocusedPracticeButton } from '@/components/interview/focused-practice-button';
 import { AppShell } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Panel } from '@/components/ui/panel';
@@ -52,11 +53,14 @@ export default function InterviewsPage() {
     async function load() {
       setOperation('initial');
       try {
+        const initialSessionId = new URLSearchParams(window.location.search).get('sessionId');
         const [nextRoles, nextSessions] = await Promise.all([api<RoleProfile[]>('/role-profiles'), api<InterviewSession[]>('/interviews/sessions')]);
+        const initialSession = initialSessionId ? await api<InterviewSession>(`/interviews/sessions/${initialSessionId}`) : null;
         if (cancelled) return;
         setRoles(nextRoles);
         setSelectedRoleId((existing) => existing || nextRoles[0]?.id || '');
         setSessions(nextSessions);
+        if (initialSession) setCurrent(initialSession);
         setError(null);
       } catch (nextError) {
         if (!cancelled) setError(toPageError(nextError, 'load', '面试配置加载失败，请确认后端服务和登录状态。'));
@@ -178,6 +182,13 @@ export default function InterviewsPage() {
     } finally {
       setUpdatingLearningItemId('');
     }
+  }
+
+  function handleFocusedSessionCreated(session: InterviewSession) {
+    setCurrent(session);
+    setSessions((existing) => [session, ...existing.filter((item) => item.id !== session.id)]);
+    setAnswer('');
+    setError(null);
   }
 
   return (
@@ -308,7 +319,12 @@ export default function InterviewsPage() {
 
           {progressFailed && <InlineError title="学习进度更新失败" description={error.message} requestId={error.requestId} />}
           {current?.report ? (
-            <ReportPanel session={current} updatingLearningItemId={updatingLearningItemId} onProgressChange={updateLearningProgress} />
+            <ReportPanel
+              session={current}
+              updatingLearningItemId={updatingLearningItemId}
+              onProgressChange={updateLearningProgress}
+              onFocusedSessionCreated={handleFocusedSessionCreated}
+            />
           ) : (
             <Panel>
               {current ? (
@@ -327,11 +343,13 @@ export default function InterviewsPage() {
 function ReportPanel({
   session,
   updatingLearningItemId,
-  onProgressChange
+  onProgressChange,
+  onFocusedSessionCreated
 }: {
   session: InterviewSession;
   updatingLearningItemId: string;
   onProgressChange: (learningItemId: string, status: ProgressStatus) => Promise<void>;
+  onFocusedSessionCreated: (session: InterviewSession) => void;
 }) {
   const report = session.report;
   if (!report) return null;
@@ -339,6 +357,7 @@ function ReportPanel({
   const strengths = (report.findings ?? []).filter((item) => item.type === 'STRENGTH');
   const weaknesses = (report.findings ?? []).filter((item) => item.type === 'WEAKNESS');
   const planItems = normalizePlanItems(report.improvementPlans?.[0]?.planItems, report.recommendations);
+  const canStartFocusedPractice = Boolean(report.id && (weaknesses.length || planItems.length));
 
   return (
     <Panel>
@@ -410,6 +429,16 @@ function ReportPanel({
       {report.nextPractice && (
         <div className="mt-5 rounded-md border border-acid/30 bg-acid/10 p-3 text-sm text-acid">
           下一轮训练：{report.nextPractice}
+        </div>
+      )}
+
+      {canStartFocusedPractice && (
+        <div className="mt-4 rounded-md border border-cyan/30 bg-cyan/10 p-3">
+          <div className="text-sm font-medium text-cyan">下一轮专项训练</div>
+          <p className="mt-1 text-xs leading-5 text-slate-300">基于本次报告的短板和补弱任务，启动一场聚焦训练面试。</p>
+          <div className="mt-3">
+            <FocusedPracticeButton reportId={report.id} onCreated={onFocusedSessionCreated} />
+          </div>
         </div>
       )}
     </Panel>

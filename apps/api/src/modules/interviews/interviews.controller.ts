@@ -33,6 +33,11 @@ export class InterviewsController {
     return this.interviews.finish(user.id, user.role as UserRole, id);
   }
 
+  @Post('reports/:id/focused-session')
+  createFocusedSession(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.interviews.createFocusedSession(user.id, user.role as UserRole, id);
+  }
+
   @Get('sessions/:id/report')
   report(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.interviews.report(user.id, user.role as UserRole, id);

@@ -22,6 +22,7 @@ export type InterviewSession = {
   roleProfile: { id?: string; name: string };
   turns?: { id: string; speaker: string; content: string }[];
   report?: {
+    id: string;
     overallScore: number;
     schemaVersion?: number;
     dimensionScores?: Record<string, number>;

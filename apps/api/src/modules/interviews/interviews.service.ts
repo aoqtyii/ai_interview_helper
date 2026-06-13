@@ -111,6 +111,65 @@ export class InterviewsService {
     return this.withRecommendationReasons(session);
   }
 
+  async createFocusedSession(userId: string, role: UserRole, reportId: string) {
+    const report = await this.prisma.assessmentReport.findUnique({
+      where: { id: reportId },
+      include: {
+        session: {
+          include: {
+            roleProfile: { include: { skills: true } }
+          }
+        },
+        findings: { orderBy: { position: 'asc' } },
+        improvementPlans: {
+          include: {
+            planItems: { orderBy: { priority: 'asc' }, include: { skill: true } }
+          }
+        }
+      }
+    });
+
+    if (!report) throw new NotFoundException('Assessment report not found');
+    if (role !== UserRole.ADMIN && report.session.userId !== userId) throw new ForbiddenException('Cannot access this report');
+
+    const focus = this.buildFocusedPracticeContext(report);
+    if (!focus) throw new BadRequestException('This report does not have enough weakness context for focused practice');
+
+    const firstQuestion = await this.ai.run({
+      taskType: 'interviewer_turn',
+      userId,
+      system:
+        '你是一名严格但支持性的 AI 岗位中文面试官。现在要基于候选人上一轮面试报告做专项训练。只提出一个高价值开场问题，问题必须聚焦短板，不要给答案。',
+      input: [
+        `岗位：${report.session.roleProfile.name}`,
+        `原面试主题：${report.session.topic ?? '综合能力'}`,
+        `专项训练主题：${focus.topic}`,
+        `主要短板：${focus.weaknesses.join('；')}`,
+        `建议练习方式：${focus.practiceMethods.join('；')}`,
+        `岗位技能：${report.session.roleProfile.skills.map((skill) => skill.name).join('、')}`
+      ].join('\n')
+    });
+
+    const session = await this.prisma.interviewSession.create({
+      data: {
+        userId: report.session.userId,
+        roleProfileId: report.session.roleProfileId,
+        difficulty: report.session.difficulty,
+        topic: focus.topic,
+        status: InterviewStatus.IN_PROGRESS,
+        startedAt: new Date(),
+        turns: {
+          create: {
+            speaker: Speaker.INTERVIEWER,
+            content: firstQuestion
+          }
+        }
+      }
+    });
+
+    return this.get(userId, role, session.id);
+  }
+
   async addTurn(userId: string, role: UserRole, sessionId: string, content: string) {
     const session = await this.get(userId, role, sessionId);
     if (session.status !== InterviewStatus.IN_PROGRESS) throw new ForbiddenException('Session is not in progress');
@@ -295,6 +354,37 @@ export class InterviewsService {
         }
       }
     };
+  }
+
+  private buildFocusedPracticeContext(report: {
+    nextPractice: string;
+    findings: Array<{ type: AssessmentFindingType; content: string }>;
+    improvementPlans: Array<{
+      planItems: Array<{ title: string; weakness: string; practiceMethod: string; dimensionKey: string; skill?: { name: string } | null }>;
+    }>;
+  }) {
+    const weaknessFindings = report.findings.filter((finding) => finding.type === AssessmentFindingType.WEAKNESS).map((finding) => finding.content.trim()).filter(Boolean);
+    const planItems = report.improvementPlans.flatMap((plan) => plan.planItems).filter((item) => item.title.trim() || item.weakness.trim() || item.practiceMethod.trim());
+    const primaryPlan = planItems[0];
+
+    if (!weaknessFindings.length && !primaryPlan) return null;
+
+    const focusTitle = primaryPlan?.skill?.name ?? primaryPlan?.title ?? weaknessFindings[0] ?? report.nextPractice;
+    return {
+      topic: this.compactTopic(`专项训练：${focusTitle}`),
+      weaknesses: [
+        ...(primaryPlan?.weakness ? [primaryPlan.weakness] : []),
+        ...weaknessFindings
+      ].slice(0, 3),
+      practiceMethods: [
+        ...(primaryPlan?.practiceMethod ? [primaryPlan.practiceMethod] : []),
+        ...(report.nextPractice ? [report.nextPractice] : [])
+      ].slice(0, 3)
+    };
+  }
+
+  private compactTopic(topic: string) {
+    return topic.replace(/\s+/g, ' ').trim().slice(0, 200);
   }
 
   private withRecommendationReasons<T extends { roleProfile?: { id?: string; name?: string } | null; report?: unknown }>(session: T): T {
